@@ -95,6 +95,7 @@ async function addDotnetStartLaunchConfigurationToLaunchJson(
         type: 'coreclr',
         request: 'launch',
         name: DOTNET_START_CONFIGURATION_NAME,
+        program: '',
       },
     ];
 
@@ -489,8 +490,27 @@ export function createDotnetStartDebugConfigurationProvider(
   };
 }
 
+function createDotnetStartInitialDebugConfigurationProvider(): vscode.DebugConfigurationProvider {
+  // Important: the Initial provider must not resolve to a fully expanded config.
+  // VS Code uses Initial providers to populate a new launch.json; we only want to offer
+  // the same stub configuration that dotnetStart.addLaunchConfiguration writes.
+  return {
+    provideDebugConfigurations: async () => {
+      return [
+        {
+          type: 'coreclr',
+          request: 'launch',
+          name: DOTNET_START_CONFIGURATION_NAME,
+          program: '',
+        },
+      ];
+    },
+  };
+}
+
 export function activate(context: vscode.ExtensionContext) {
   const provider = createDotnetStartDebugConfigurationProvider(context);
+  const initialProvider = createDotnetStartInitialDebugConfigurationProvider();
 
   // Provide a dynamic configuration so it shows up in the native F5 picker.
   context.subscriptions.push(
@@ -498,6 +518,16 @@ export function activate(context: vscode.ExtensionContext) {
       'coreclr',
       provider,
       vscode.DebugConfigurationProviderTriggerKind.Dynamic,
+    ),
+  );
+
+  // Provide an initial configuration so VS Code can offer dotnet-start when creating
+  // .vscode/launch.json for the first time.
+  context.subscriptions.push(
+    vscode.debug.registerDebugConfigurationProvider(
+      'coreclr',
+      initialProvider,
+      vscode.DebugConfigurationProviderTriggerKind.Initial,
     ),
   );
 

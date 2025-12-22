@@ -5,6 +5,7 @@
     "description": "Debug session provider for starting dotnet projects",
     "activationEvents": [
         "onDebugDynamicConfigurations",
+        "onDebugInitialConfigurations",
         "onDebugResolve:coreclr"
     ],
     "engines": {
