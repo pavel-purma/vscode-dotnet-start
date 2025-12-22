@@ -2,7 +2,7 @@
     "name": "dotnet-start",
     "version": "0.0.1",
     "displayName": "dotnet-start",
-    "description": "Debug session provider for starting dotnet projects",
+    "description": "Easy start and debug selected .NET project with launch profiles",
     "repository": {
         "type": "git",
         "url": "https://github.com/pavel-purma/vscode-dotnet-start.git"
@@ -59,7 +59,6 @@
         ]
     },
     "scripts": {
-        "vscode:prepublish": "pnpm run package",
         "compile": "pnpm run check-types && pnpm run lint && node esbuild.js",
         "watch": "run-p watch:*",
         "watch:esbuild": "node esbuild.js --watch",
