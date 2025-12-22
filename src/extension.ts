@@ -91,12 +91,7 @@ async function addDotnetStartLaunchConfigurationToLaunchJson(
 
     const updated: vscode.DebugConfiguration[] = [
       ...existing,
-      {
-        type: 'coreclr',
-        request: 'launch',
-        name: DOTNET_START_CONFIGURATION_NAME,
-        program: '',
-      },
+      buildCoreclrDotnetStartStubConfiguration(),
     ];
 
     // This creates/updates .vscode/launch.json.
@@ -307,6 +302,15 @@ function buildCoreclrDotnetRunConfiguration(csprojUri: vscode.Uri, profile: stri
   };
 }
 
+function buildCoreclrDotnetStartStubConfiguration(): vscode.DebugConfiguration {
+  return {
+    type: 'coreclr',
+    request: 'launch',
+    name: DOTNET_START_CONFIGURATION_NAME,
+    program: 'dotnet',
+  };
+}
+
 function getWsFolderForProject(csprojUri: vscode.Uri): vscode.WorkspaceFolder | undefined {
   return getWorkspaceFolderForUri(csprojUri) ?? getAnyWorkspaceFolder();
 }
@@ -472,13 +476,7 @@ export function createDotnetStartDebugConfigurationProvider(
   return {
     provideDebugConfigurations: async () => {
       // Name must match the UX requirement: show "dotnet-start" in the native picker.
-      return [
-        {
-          type: 'coreclr',
-          request: 'launch',
-          name: DOTNET_START_CONFIGURATION_NAME,
-        },
-      ];
+      return [buildCoreclrDotnetStartStubConfiguration()];
     },
     resolveDebugConfiguration: async (folder, debugConfiguration) => {
       if (debugConfiguration?.name !== DOTNET_START_CONFIGURATION_NAME) {
@@ -503,12 +501,8 @@ function createDotnetStartInitialDebugConfigurationProvider(): vscode.DebugConfi
   return {
     provideDebugConfigurations: async () => {
       return [
-        {
-          type: 'coreclr',
-          request: 'launch',
-          name: DOTNET_START_CONFIGURATION_NAME,
-          program: '',
-        },
+        // Keep this minimal but schema-valid so launch.json has no validation errors.
+        buildCoreclrDotnetStartStubConfiguration(),
       ];
     },
   };
