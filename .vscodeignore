@@ -3,10 +3,13 @@
 out/**
 node_modules/**
 src/**
+.github/**
+scripts/**
 .gitignore
 .yarnrc
 esbuild.js
 vsc-extension-quickstart.md
+pnpm-lock.yaml
 **/tsconfig.json
 **/eslint.config.mjs
 **/*.map
