@@ -184,6 +184,97 @@ suite('dotnet-start extension', () => {
     }
   });
 
+  test('dotnetStart.start run-once action uses the active (highlighted) item and prompts for a one-off profile', async () => {
+    const originalShowQuickPick = vscode.window.showQuickPick;
+    const originalCreateQuickPick = vscode.window.createQuickPick;
+    const originalStartDebugging = vscode.debug.startDebugging;
+
+    let capturedConfig: vscode.DebugConfiguration | undefined;
+    let sawOneOffProfileTitle = false;
+
+    try {
+      (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = (() => {
+        let onDidAcceptHandler: (() => void) | undefined;
+        let onDidHideHandler: (() => void) | undefined;
+
+        const quickPick = {
+          items: [] as AnyQuickPickItem[],
+          activeItems: [] as AnyQuickPickItem[],
+          selectedItems: [] as AnyQuickPickItem[],
+          title: undefined as unknown,
+          placeholder: undefined as unknown,
+          onDidAccept: (cb: () => void) => {
+            onDidAcceptHandler = cb;
+            return { dispose: () => undefined };
+          },
+          onDidHide: (cb: () => void) => {
+            onDidHideHandler = cb;
+            return { dispose: () => undefined };
+          },
+          onDidDispose: (_cb: () => void) => {
+            return { dispose: () => undefined };
+          },
+          show: () => {
+            // Simulate the user moving the highlight to the second action,
+            // but with selectedItems remaining empty (real VS Code can behave this way).
+            quickPick.activeItems = [quickPick.items[1] ?? quickPick.items[0]].filter(Boolean) as AnyQuickPickItem[];
+            onDidAcceptHandler?.();
+            onDidHideHandler?.();
+          },
+          dispose: () => undefined,
+        };
+
+        return quickPick as unknown;
+      }) as unknown;
+
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = (async (
+        items: readonly AnyQuickPickItem[],
+        options?: vscode.QuickPickOptions,
+      ) => {
+        assert.ok(items.length > 0, 'Expected QuickPick items.');
+
+        const first = items[0];
+        if (typeof first === 'object' && first && 'uri' in first) {
+          const match = items.find((i) =>
+            typeof i === 'object' &&
+            i &&
+            'uri' in i &&
+            (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath,
+          );
+          return (match ?? first) as unknown;
+        }
+
+        if (typeof first === 'object' && first && 'profileName' in first) {
+          if (options?.title?.includes('(once)')) {
+            sawOneOffProfileTitle = true;
+          }
+          const match = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
+          return (match ?? first) as unknown;
+        }
+
+        return first as unknown;
+      }) as unknown;
+
+      (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = (async (
+        _folder: vscode.WorkspaceFolder,
+        config: vscode.DebugConfiguration,
+      ) => {
+        capturedConfig = config;
+        return true;
+      }) as unknown;
+
+      await vscode.commands.executeCommand('dotnetStart.start');
+
+      assert.ok(sawOneOffProfileTitle, 'Expected the one-off profile QuickPick title to be used.');
+      assert.ok(capturedConfig, 'Expected a debug configuration passed to startDebugging.');
+      assert.deepStrictEqual(capturedConfig.args, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Dev']);
+    } finally {
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
+      (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = originalCreateQuickPick as unknown;
+      (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = originalStartDebugging as unknown;
+    }
+  });
+
   test('provides a dotnet-start debug configuration option', async () => {
     const fakeContext = {
       workspaceState: {

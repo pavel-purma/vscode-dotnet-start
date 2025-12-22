@@ -38,7 +38,7 @@ async function showPreselectedQuickPick<T extends vscode.QuickPickItem>(
     };
 
     acceptDisposable = quickPick.onDidAccept(() => {
-      finish(quickPick.selectedItems[0]);
+      finish(quickPick.selectedItems[0] ?? quickPick.activeItems[0]);
     });
     hideDisposable = quickPick.onDidHide(() => {
       finish(undefined);
