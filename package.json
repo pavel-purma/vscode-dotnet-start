@@ -3,6 +3,14 @@
     "version": "0.0.1",
     "displayName": "dotnet-start",
     "description": "Debug session provider for starting dotnet projects",
+    "repository": {
+        "type": "git",
+        "url": "https://github.com/pavel-purma/vscode-dotnet-start.git"
+    },
+    "homepage": "https://github.com/pavel-purma/vscode-dotnet-start#readme",
+    "bugs": {
+        "url": "https://github.com/pavel-purma/vscode-dotnet-start/issues"
+    },
     "icon": "media/icon.png",
     "activationEvents": [
         "onDebugDynamicConfigurations",

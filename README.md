@@ -1,23 +1,48 @@
 # dotnet-start
 
-VS Code extension that helps you:
+GitHub source: <https://github.com/pavel-purma/vscode-dotnet-start>
+
+Use this extension when you want a **“start project” + “launch profile”** workflow for .NET in VS Code (similar to what the .NET Dev Kit experience enables), **without requiring Dev Kit**.
+
+It lets you quickly:
+
+- Pick which `.csproj` is the **start project** in the current workspace
+- Pick which `launchSettings.json` **profile** should be used
+
+Then you can press `F5` and choose **dotnet-start** from VS Code’s native debug picker to start the selected project using the selected profile.
+
+## What it does
+
+This extension provides a small set of commands to save (per workspace) which `.csproj` and launch profile you want to run, and then starts debugging by generating a `coreclr` configuration.
+
+It’s especially useful in solutions with many projects where you frequently switch which project/profile you’re debugging.
+
+## How it works (at a glance)
+
+- Launch profiles come from `Properties/launchSettings.json` next to the selected `.csproj`.
+- Debugging uses `dotnet run --project <csproj> --launch-profile <profile>`.
+- The extension delegates to your installed .NET debugger (`coreclr`) via `vscode.debug.startDebugging(...)`.
+
+## Usage
+
+In your workspace:
 
 - Choose a `.csproj` in your workspace as the **start project**.
 - Choose a `launchSettings.json` **launch profile** (Visual Studio-style profiles).
 - Press `F5` and choose **dotnet-start** in VS Code's native debug configuration picker to start debugging the selected project/profile.
 
-This extension delegates debugging to the installed .NET debugger (`coreclr`).
+You don’t need to have a specific file open. The **dotnet-start** entry will appear in the `F5` picker, and (on first use) it will prompt you to select a start project and launch profile.
 
-You do not need to have a specific file open. The **dotnet-start** entry will appear in the `F5` debug picker, and when chosen it will prompt you to select a start project (`.csproj`) (and a launch profile if needed).
+Optional: you can also add a `dotnet-start` entry to your workspace’s `launch.json` (via the command **dotnet-start: Add dotnet-start to launch.json**). After that, selecting **dotnet-start** as your active debug configuration makes `F5` behave like your regular “start debugging” trigger—except it will start the `.csproj` and launch profile you selected with this extension.
 
 ## Try it
 
 1. Build the extension: `npm run compile`
 2. Press `F5` (Run Extension) to open an Extension Development Host window.
 3. In the Extension Host window:
-   - Run command: **dotnet-start: Select Start Project (.csproj)**
-   - Run command: **dotnet-start: Select Launch Profile (launchSettings.json)**
-   - Press `F5` and pick **dotnet-start** in the native debug configuration picker
+   - Run: **dotnet-start: Select Start Project (.csproj)**
+   - Run: **dotnet-start: Select Launch Profile (launchSettings.json)**
+   - Press `F5` and pick **dotnet-start** in the debug configuration picker
 
 Notes:
 
