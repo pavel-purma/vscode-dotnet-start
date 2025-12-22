@@ -27,6 +27,10 @@
             {
                 "command": "dotnetStart.start",
                 "title": "dotnet-start: Start Debugging"
+            },
+            {
+                "command": "dotnetStart.addLaunchConfiguration",
+                "title": "dotnet-start: Add dotnet-start to launch.json"
             }
         ],
         "keybindings": [

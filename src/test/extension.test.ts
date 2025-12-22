@@ -275,6 +275,70 @@ suite('dotnet-start extension', () => {
     }
   });
 
+  test('dotnetStart.addLaunchConfiguration adds a dotnet-start entry to launch configurations', async () => {
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    const originalShowInformationMessage = vscode.window.showInformationMessage;
+
+    type LaunchConfigStore = {
+      version?: unknown;
+      configurations?: vscode.DebugConfiguration[];
+    };
+
+    const store: LaunchConfigStore = {
+      version: '0.2.0',
+      configurations: [],
+    };
+
+    let updateCalls = 0;
+    let infoCalls = 0;
+
+    try {
+      (vscode.workspace as unknown as { getConfiguration: unknown }).getConfiguration = ((): unknown => {
+        return {
+          get: (section: string) => {
+            if (section === 'configurations') {
+              return store.configurations;
+            }
+            if (section === 'version') {
+              return store.version;
+            }
+            return undefined;
+          },
+          update: async (section: string, value: unknown) => {
+            updateCalls++;
+            if (section === 'configurations') {
+              store.configurations = value as vscode.DebugConfiguration[];
+            }
+            if (section === 'version') {
+              store.version = value;
+            }
+            return undefined;
+          },
+        };
+      }) as unknown;
+
+      (vscode.window as unknown as { showInformationMessage: unknown }).showInformationMessage = (async () => {
+        infoCalls++;
+        return undefined;
+      }) as unknown;
+
+      await vscode.commands.executeCommand('dotnetStart.addLaunchConfiguration');
+
+      assert.ok(updateCalls >= 1, 'Expected at least one configuration update call.');
+      assert.ok(infoCalls >= 1, 'Expected an informational message after the update.');
+
+      const configs = store.configurations ?? [];
+      const dotnetStart = configs.find((c) => c.name === DOTNET_START_CONFIGURATION_NAME);
+      assert.ok(dotnetStart, 'Expected dotnet-start configuration to be present.');
+      assert.strictEqual(dotnetStart?.type, 'coreclr');
+      assert.strictEqual(dotnetStart?.request, 'launch');
+    } finally {
+      (vscode.workspace as unknown as { getConfiguration: unknown }).getConfiguration = originalGetConfiguration as unknown;
+      (vscode.window as unknown as { showInformationMessage: unknown }).showInformationMessage =
+        originalShowInformationMessage as unknown;
+    }
+  });
+
   test('provides a dotnet-start debug configuration option', async () => {
     const fakeContext = {
       workspaceState: {

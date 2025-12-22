@@ -3,6 +3,7 @@ import * as vscode from 'vscode';
 
 const STATE_KEY_CSPROJ = 'dotnet-start.selected-csproj-uri';
 const STATE_KEY_LAUNCH_PROFILE = 'dotnet-start.selected-launch-profile';
+const STATE_KEY_LAUNCH_JSON_PROMPT_SHOWN = 'dotnet-start.launch-json.prompt-shown';
 export const DOTNET_START_CONFIGURATION_NAME = 'dotnet-start';
 
 type F5ActionId = 'dotnet-start' | 'dotnet-start.run-once-profile';
@@ -64,6 +65,84 @@ function getWorkspaceFolderForUri(uri: vscode.Uri): vscode.WorkspaceFolder | und
 
 function getAnyWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
   return vscode.workspace.workspaceFolders?.[0];
+}
+
+function hasDotnetStartLaunchConfiguration(configurations: readonly vscode.DebugConfiguration[]): boolean {
+  return configurations.some(
+    (c) =>
+      c &&
+      typeof c === 'object' &&
+      c.name === DOTNET_START_CONFIGURATION_NAME &&
+      c.type === 'coreclr' &&
+      c.request === 'launch',
+  );
+}
+
+async function addDotnetStartLaunchConfigurationToLaunchJson(
+  wsFolder: vscode.WorkspaceFolder,
+): Promise<'added' | 'already-present' | 'failed'> {
+  try {
+    const launchConfig = vscode.workspace.getConfiguration('launch', wsFolder.uri);
+    const existing = launchConfig.get<vscode.DebugConfiguration[]>('configurations') ?? [];
+
+    if (hasDotnetStartLaunchConfiguration(existing)) {
+      return 'already-present';
+    }
+
+    const updated: vscode.DebugConfiguration[] = [
+      ...existing,
+      {
+        type: 'coreclr',
+        request: 'launch',
+        name: DOTNET_START_CONFIGURATION_NAME,
+      },
+    ];
+
+    // This creates/updates .vscode/launch.json.
+    await launchConfig.update('version', '0.2.0', vscode.ConfigurationTarget.WorkspaceFolder);
+    await launchConfig.update('configurations', updated, vscode.ConfigurationTarget.WorkspaceFolder);
+    return 'added';
+  } catch {
+    return 'failed';
+  }
+}
+
+async function maybePromptToAddLaunchJson(context: vscode.ExtensionContext, wsFolder: vscode.WorkspaceFolder): Promise<void> {
+  const alreadyPrompted = context.workspaceState.get<boolean>(STATE_KEY_LAUNCH_JSON_PROMPT_SHOWN) ?? false;
+  if (alreadyPrompted) {
+    return;
+  }
+
+  const launchConfig = vscode.workspace.getConfiguration('launch', wsFolder.uri);
+  const existing = launchConfig.get<vscode.DebugConfiguration[]>('configurations') ?? [];
+  if (hasDotnetStartLaunchConfiguration(existing)) {
+    await context.workspaceState.update(STATE_KEY_LAUNCH_JSON_PROMPT_SHOWN, true);
+    return;
+  }
+
+  const launchJsonUri = vscode.Uri.joinPath(wsFolder.uri, '.vscode', 'launch.json');
+  let launchJsonExists = false;
+  try {
+    await vscode.workspace.fs.stat(launchJsonUri);
+    launchJsonExists = true;
+  } catch {
+    launchJsonExists = false;
+  }
+
+  const message = launchJsonExists
+    ? 'Add a dotnet-start configuration to .vscode/launch.json?'
+    : 'Create .vscode/launch.json with a dotnet-start configuration?';
+
+  const picked = await vscode.window.showInformationMessage(message, 'Add', 'Not now');
+  await context.workspaceState.update(STATE_KEY_LAUNCH_JSON_PROMPT_SHOWN, true);
+  if (picked !== 'Add') {
+    return;
+  }
+
+  const result = await addDotnetStartLaunchConfigurationToLaunchJson(wsFolder);
+  if (result === 'failed') {
+    void vscode.window.showErrorMessage('Failed to update .vscode/launch.json.');
+  }
 }
 
 async function findCsprojFiles(): Promise<vscode.Uri[]> {
@@ -298,6 +377,8 @@ async function startDotnetDebugging(context: vscode.ExtensionContext): Promise<v
     return;
   }
 
+  await maybePromptToAddLaunchJson(context, built.wsFolder);
+
   const ok = await vscode.debug.startDebugging(built.wsFolder, built.debugConfig);
   if (!ok) {
     void vscode.window.showErrorMessage(
@@ -439,6 +520,28 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('dotnetStart.start', async () => {
       await runF5Picker(context);
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dotnetStart.addLaunchConfiguration', async () => {
+      const wsFolder = getAnyWorkspaceFolder();
+      if (!wsFolder) {
+        void vscode.window.showErrorMessage('No workspace folder is open.');
+        return;
+      }
+
+      const result = await addDotnetStartLaunchConfigurationToLaunchJson(wsFolder);
+      if (result === 'added') {
+        void vscode.window.showInformationMessage('Added dotnet-start to .vscode/launch.json.');
+        return;
+      }
+      if (result === 'already-present') {
+        void vscode.window.showInformationMessage('dotnet-start is already present in .vscode/launch.json.');
+        return;
+      }
+
+      void vscode.window.showErrorMessage('Failed to update .vscode/launch.json.');
     }),
   );
 }
