@@ -28,6 +28,13 @@
                 "command": "dotnetStart.start",
                 "title": "dotnet-start: Start Debugging"
             }
+        ],
+        "keybindings": [
+            {
+                "command": "dotnetStart.start",
+                "key": "ctrl+alt+f5",
+                "when": "!inDebugMode"
+            }
         ]
     },
     "scripts": {
