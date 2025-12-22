@@ -584,4 +584,262 @@ suite('dotnet-start extension', () => {
       (vscode.workspace as unknown as { getConfiguration: unknown }).getConfiguration = originalGetConfiguration as unknown;
     }
   });
+
+  test('changing the selected start project clears the saved launch profile', async function () {
+    this.timeout(10_000);
+
+    const originalShowQuickPick = vscode.window.showQuickPick;
+    const originalCreateQuickPick = vscode.window.createQuickPick;
+    const originalStartDebugging = vscode.debug.startDebugging;
+
+    const secondCsprojUri = vscode.Uri.joinPath(fixtureRoot, 'App2', 'App2.csproj');
+    const secondLaunchSettingsUri = vscode.Uri.joinPath(
+      fixtureRoot,
+      'App2',
+      'Properties',
+      'launchSettings.json',
+    );
+
+    await writeTextFile(
+      secondCsprojUri,
+      [
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        '  <PropertyGroup>',
+        '    <OutputType>Exe</OutputType>',
+        '    <TargetFramework>net8.0</TargetFramework>',
+        '  </PropertyGroup>',
+        '</Project>',
+      ].join('\n'),
+    );
+
+    await writeTextFile(
+      secondLaunchSettingsUri,
+      JSON.stringify(
+        {
+          profiles: {
+            Dev: { commandName: 'Project' },
+            Prod: { commandName: 'Project' },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    let phase: 'initial' | 'afterProjectChange' = 'initial';
+    let sawProfilePickerAfterProjectChange = false;
+
+    let capturedArgs: string[] | undefined;
+
+    try {
+      (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = (() => {
+        let onDidAcceptHandler: (() => void) | undefined;
+        let onDidHideHandler: (() => void) | undefined;
+
+        const quickPick = {
+          items: [] as AnyQuickPickItem[],
+          activeItems: [] as AnyQuickPickItem[],
+          selectedItems: [] as AnyQuickPickItem[],
+          title: undefined as unknown,
+          placeholder: undefined as unknown,
+          onDidAccept: (cb: () => void) => {
+            onDidAcceptHandler = cb;
+            return { dispose: () => undefined };
+          },
+          onDidHide: (cb: () => void) => {
+            onDidHideHandler = cb;
+            return { dispose: () => undefined };
+          },
+          onDidDispose: (_cb: () => void) => {
+            return { dispose: () => undefined };
+          },
+          show: () => {
+            const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
+            quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+            quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+            onDidAcceptHandler?.();
+            onDidHideHandler?.();
+          },
+          dispose: () => undefined,
+        };
+
+        return quickPick as unknown;
+      }) as unknown;
+
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = (async (
+        items: readonly AnyQuickPickItem[],
+      ) => {
+        assert.ok(items.length > 0, 'Expected QuickPick items.');
+
+        const first = items[0];
+        if (typeof first === 'object' && first && 'uri' in first) {
+          const target = items.find(
+            (i) =>
+              typeof i === 'object' &&
+              i &&
+              'uri' in i &&
+              (i as unknown as { uri: vscode.Uri }).uri.fsPath ===
+                (phase === 'initial' ? csprojUri.fsPath : secondCsprojUri.fsPath),
+          );
+          return (target ?? first) as unknown;
+        }
+
+        if (typeof first === 'object' && first && 'profileName' in first) {
+          if (phase === 'afterProjectChange') {
+            sawProfilePickerAfterProjectChange = true;
+            const prod = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Prod');
+            return (prod ?? first) as unknown;
+          }
+          const dev = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
+          return (dev ?? first) as unknown;
+        }
+
+        return first as unknown;
+      }) as unknown;
+
+      (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = (async (
+        _folder: vscode.WorkspaceFolder,
+        config: vscode.DebugConfiguration,
+      ) => {
+        capturedArgs = config.args as string[];
+        return true;
+      }) as unknown;
+
+      await vscode.commands.executeCommand('dotnetStart.clearState');
+
+      // First run: select App + Dev (saved).
+      phase = 'initial';
+      await vscode.commands.executeCommand('dotnetStart.start');
+      assert.deepStrictEqual(capturedArgs, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Dev']);
+
+      // Change project selection to App2; this should clear the saved profile.
+      phase = 'afterProjectChange';
+      await vscode.commands.executeCommand('dotnetStart.selectStartProject');
+
+      // Next run: should prompt for a profile again (not reuse Dev), and use Prod.
+      sawProfilePickerAfterProjectChange = false;
+      await vscode.commands.executeCommand('dotnetStart.start');
+
+      assert.ok(sawProfilePickerAfterProjectChange, 'Expected the launch profile picker to appear after changing the project.');
+      assert.deepStrictEqual(capturedArgs, ['run', '--project', secondCsprojUri.fsPath, '--launch-profile', 'Prod']);
+    } finally {
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
+      (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = originalCreateQuickPick as unknown;
+      (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = originalStartDebugging as unknown;
+    }
+  });
+
+  test('when there is only one launch profile, it is auto-selected and persisted without showing a picker', async function () {
+    this.timeout(10_000);
+
+    const originalShowQuickPick = vscode.window.showQuickPick;
+    const originalCreateQuickPick = vscode.window.createQuickPick;
+    const originalStartDebugging = vscode.debug.startDebugging;
+
+    // Replace the fixture launchSettings.json with a single profile.
+    await writeTextFile(
+      launchSettingsUri,
+      JSON.stringify(
+        {
+          profiles: {
+            Only: {
+              commandName: 'Project',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+
+    let showQuickPickCalls = 0;
+    let capturedArgs: string[] | undefined;
+
+    try {
+      (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = (() => {
+        let onDidAcceptHandler: (() => void) | undefined;
+        let onDidHideHandler: (() => void) | undefined;
+
+        const quickPick = {
+          items: [] as AnyQuickPickItem[],
+          activeItems: [] as AnyQuickPickItem[],
+          selectedItems: [] as AnyQuickPickItem[],
+          title: undefined as unknown,
+          placeholder: undefined as unknown,
+          onDidAccept: (cb: () => void) => {
+            onDidAcceptHandler = cb;
+            return { dispose: () => undefined };
+          },
+          onDidHide: (cb: () => void) => {
+            onDidHideHandler = cb;
+            return { dispose: () => undefined };
+          },
+          onDidDispose: (_cb: () => void) => {
+            return { dispose: () => undefined };
+          },
+          show: () => {
+            const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
+            quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+            quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+            onDidAcceptHandler?.();
+            onDidHideHandler?.();
+          },
+          dispose: () => undefined,
+        };
+
+        return quickPick as unknown;
+      }) as unknown;
+
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = (async (
+        items: readonly AnyQuickPickItem[],
+      ) => {
+        showQuickPickCalls++;
+        assert.ok(items.length > 0, 'Expected QuickPick items.');
+
+        const first = items[0];
+        if (typeof first === 'object' && first && 'uri' in first) {
+          const match = items.find(
+            (i) =>
+              typeof i === 'object' &&
+              i &&
+              'uri' in i &&
+              (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath,
+          );
+          return (match ?? first) as unknown;
+        }
+
+        if (typeof first === 'object' && first && 'profileName' in first) {
+          assert.fail('Did not expect the profile QuickPick to be shown when only one profile exists.');
+        }
+
+        return first as unknown;
+      }) as unknown;
+
+      (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = (async (
+        _folder: vscode.WorkspaceFolder,
+        config: vscode.DebugConfiguration,
+      ) => {
+        capturedArgs = config.args as string[];
+        return true;
+      }) as unknown;
+
+      await vscode.commands.executeCommand('dotnetStart.clearState');
+
+      // First run: should prompt only for csproj, auto-select the sole profile.
+      await vscode.commands.executeCommand('dotnetStart.start');
+      assert.strictEqual(showQuickPickCalls, 1, 'Expected only the csproj QuickPick prompt on first run.');
+      assert.deepStrictEqual(capturedArgs, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Only']);
+
+      // Second run: should prompt for nothing (state persisted).
+      showQuickPickCalls = 0;
+      await vscode.commands.executeCommand('dotnetStart.start');
+      assert.strictEqual(showQuickPickCalls, 0, 'Expected no prompts on subsequent run when state is saved.');
+      assert.deepStrictEqual(capturedArgs, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Only']);
+    } finally {
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
+      (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = originalCreateQuickPick as unknown;
+      (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = originalStartDebugging as unknown;
+    }
+  });
 });

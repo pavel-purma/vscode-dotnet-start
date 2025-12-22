@@ -147,6 +147,15 @@ async function pickCsproj(context: vscode.ExtensionContext): Promise<vscode.Uri 
     return undefined;
   }
 
+  if (currentlySelected) {
+    const previousKey = normalizeFsPath(currentlySelected.fsPath);
+    const nextKey = normalizeFsPath(picked.uri.fsPath);
+    if (previousKey !== nextKey) {
+      // The saved launch profile is project-specific. Clear it when the start project changes.
+      await context.workspaceState.update(STATE_KEY_LAUNCH_PROFILE, undefined);
+    }
+  }
+
   await context.workspaceState.update(STATE_KEY_CSPROJ, picked.uri.toString());
   return picked.uri;
 }
@@ -219,6 +228,12 @@ async function pickLaunchProfile(context: vscode.ExtensionContext, csprojUri: vs
   if (profileNames.length === 0) {
     void vscode.window.showErrorMessage('No launch profiles found in launchSettings.json.');
     return undefined;
+  }
+
+  if (profileNames.length === 1) {
+    const onlyProfile = profileNames[0];
+    await context.workspaceState.update(STATE_KEY_LAUNCH_PROFILE, onlyProfile);
+    return onlyProfile;
   }
 
   const items: ProfilePickItem[] = profileNames.map((profileName) => ({
@@ -295,6 +310,10 @@ async function pickLaunchProfileOnce(csprojUri: vscode.Uri): Promise<string | un
   if (profileNames.length === 0) {
     void vscode.window.showErrorMessage('No launch profiles found in launchSettings.json.');
     return undefined;
+  }
+
+  if (profileNames.length === 1) {
+    return profileNames[0];
   }
 
   const items: ProfilePickItem[] = profileNames.map((profileName) => ({
