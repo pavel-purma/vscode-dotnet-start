@@ -1,11 +1,22 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-const STATE_KEY_CSPROJ = 'dotnetStart.selectedCsprojUri';
-const STATE_KEY_LAUNCH_PROFILE = 'dotnetStart.selectedLaunchProfile';
+const STATE_KEY_CSPROJ = 'dotnet-start.selected-csproj-uri';
+const STATE_KEY_LAUNCH_PROFILE = 'dotnet-start.selected-launch-profile';
+export const DOTNET_START_CONFIGURATION_NAME = 'dotnet-start';
 
 type CsprojPickItem = vscode.QuickPickItem & { uri: vscode.Uri };
 type ProfilePickItem = vscode.QuickPickItem & { profileName: string };
+
+function toWorkspaceRelativeDetail(uri: vscode.Uri): string {
+  return vscode.workspace.asRelativePath(uri, false).replaceAll('\\', '/');
+}
+
+function normalizeFsPath(p: string): string {
+  // Windows paths are case-insensitive; normalize for stable comparisons.
+  const normalized = path.normalize(p);
+  return process.platform === 'win32' ? normalized.toLowerCase() : normalized;
+}
 
 function getWorkspaceFolderForUri(uri: vscode.Uri): vscode.WorkspaceFolder | undefined {
   return vscode.workspace.getWorkspaceFolder(uri);
@@ -22,28 +33,31 @@ async function findCsprojFiles(): Promise<vscode.Uri[]> {
   );
 }
 
-function toWorkspaceRelativeLabel(uri: vscode.Uri): string {
-  const wsFolder = getWorkspaceFolderForUri(uri);
-  if (!wsFolder) {
-    return uri.fsPath;
-  }
-  return path.relative(wsFolder.uri.fsPath, uri.fsPath).replaceAll('\\', '/');
-}
-
 async function pickCsproj(context: vscode.ExtensionContext): Promise<vscode.Uri | undefined> {
+  const currentlySelected = await getSelectedCsproj(context);
   const csprojUris = await findCsprojFiles();
   if (csprojUris.length === 0) {
     void vscode.window.showErrorMessage('No .csproj files found in this workspace.');
     return undefined;
   }
 
+  const selectedKey = currentlySelected ? normalizeFsPath(currentlySelected.fsPath) : undefined;
+
   const items: CsprojPickItem[] = csprojUris
-    .sort((a, b) => a.fsPath.localeCompare(b.fsPath))
+    .sort((a, b) => {
+      const aIsSelected = selectedKey ? normalizeFsPath(a.fsPath) === selectedKey : false;
+      const bIsSelected = selectedKey ? normalizeFsPath(b.fsPath) === selectedKey : false;
+      if (aIsSelected !== bIsSelected) {
+        return aIsSelected ? -1 : 1;
+      }
+      return a.fsPath.localeCompare(b.fsPath);
+    })
     .map((uri) => {
-      const rel = toWorkspaceRelativeLabel(uri);
+      const isSelected = selectedKey ? normalizeFsPath(uri.fsPath) === selectedKey : false;
       return {
-        label: path.basename(uri.fsPath),
-        description: rel,
+        label: path.parse(uri.fsPath).name,
+        description: isSelected ? 'Current' : undefined,
+        detail: toWorkspaceRelativeDetail(uri),
         uri,
       };
     });
@@ -51,7 +65,7 @@ async function pickCsproj(context: vscode.ExtensionContext): Promise<vscode.Uri 
   const picked = await vscode.window.showQuickPick(items, {
     title: 'Select start project (.csproj)',
     placeHolder: 'Choose a .csproj to use as the start project',
-    matchOnDescription: true,
+    matchOnDetail: true,
   });
   if (!picked) {
     return undefined;
@@ -133,7 +147,6 @@ async function pickLaunchProfile(context: vscode.ExtensionContext, csprojUri: vs
 
   const items: ProfilePickItem[] = profileNames.map((profileName) => ({
     label: profileName,
-    description: toWorkspaceRelativeLabel(launchSettingsUri),
     profileName,
   }));
 
@@ -154,12 +167,14 @@ async function getSelectedLaunchProfile(context: vscode.ExtensionContext): Promi
   return context.workspaceState.get<string>(STATE_KEY_LAUNCH_PROFILE);
 }
 
-async function startDotnetDebugging(context: vscode.ExtensionContext): Promise<void> {
+async function buildDotnetStartDebugConfiguration(
+  context: vscode.ExtensionContext,
+): Promise<{ wsFolder: vscode.WorkspaceFolder; debugConfig: vscode.DebugConfiguration } | undefined> {
   let csprojUri = await getSelectedCsproj(context);
   if (!csprojUri) {
     csprojUri = await pickCsproj(context);
     if (!csprojUri) {
-      return;
+      return undefined;
     }
   }
 
@@ -167,7 +182,7 @@ async function startDotnetDebugging(context: vscode.ExtensionContext): Promise<v
   if (!profile) {
     profile = await pickLaunchProfile(context, csprojUri);
     if (!profile) {
-      return;
+      return undefined;
     }
   }
 
@@ -175,13 +190,13 @@ async function startDotnetDebugging(context: vscode.ExtensionContext): Promise<v
   const wsFolder = getWorkspaceFolderForUri(csprojUri) ?? getAnyWorkspaceFolder();
   if (!wsFolder) {
     void vscode.window.showErrorMessage('No workspace folder is open.');
-    return;
+    return undefined;
   }
 
   const debugConfig: vscode.DebugConfiguration = {
     type: 'coreclr',
     request: 'launch',
-    name: `dotnet-start: ${path.basename(csprojUri.fsPath)} (${profile})`,
+    name: DOTNET_START_CONFIGURATION_NAME,
     program: 'dotnet',
     args: ['run', '--project', csprojUri.fsPath, '--launch-profile', profile],
     cwd: projectDir,
@@ -189,7 +204,16 @@ async function startDotnetDebugging(context: vscode.ExtensionContext): Promise<v
     internalConsoleOptions: 'neverOpen',
   };
 
-  const ok = await vscode.debug.startDebugging(wsFolder, debugConfig);
+  return { wsFolder, debugConfig };
+}
+
+async function startDotnetDebugging(context: vscode.ExtensionContext): Promise<void> {
+  const built = await buildDotnetStartDebugConfiguration(context);
+  if (!built) {
+    return;
+  }
+
+  const ok = await vscode.debug.startDebugging(built.wsFolder, built.debugConfig);
   if (!ok) {
     void vscode.window.showErrorMessage(
       'Failed to start debugging. Ensure the C#/.NET debugger is installed and that "dotnet" is on PATH.',
@@ -197,35 +221,48 @@ async function startDotnetDebugging(context: vscode.ExtensionContext): Promise<v
   }
 }
 
-async function showF5Picker(context: vscode.ExtensionContext): Promise<void> {
-  const csprojUri = await getSelectedCsproj(context);
-  const csprojLabel = csprojUri ? toWorkspaceRelativeLabel(csprojUri) : '(start project not selected)';
-  const profile = (await getSelectedLaunchProfile(context)) ?? '(launch profile not selected)';
-
-  const items: Array<vscode.QuickPickItem & { action: 'start' }> = [
-    {
-      label: 'dotnet-start',
-      description: csprojLabel,
-      detail: `Launch profile: ${profile}`,
-      action: 'start',
+export function createDotnetStartDebugConfigurationProvider(
+  context: vscode.ExtensionContext,
+): vscode.DebugConfigurationProvider {
+  return {
+    provideDebugConfigurations: async () => {
+      // Name must match the UX requirement: show "dotnet-start" in the native picker.
+      return [
+        {
+          type: 'coreclr',
+          request: 'launch',
+          name: DOTNET_START_CONFIGURATION_NAME,
+        },
+      ];
     },
-  ];
+    resolveDebugConfiguration: async (folder, debugConfiguration) => {
+      if (debugConfiguration?.name !== DOTNET_START_CONFIGURATION_NAME) {
+        return debugConfiguration;
+      }
 
-  const picked = await vscode.window.showQuickPick(items, {
-    title: 'Select and Start Debugging',
-    placeHolder: 'Choose a configuration',
-    matchOnDescription: true,
-  });
-  if (!picked) {
-    return;
-  }
+      const built = await buildDotnetStartDebugConfiguration(context);
+      if (!built) {
+        return undefined;
+      }
 
-  if (picked.action === 'start') {
-    await startDotnetDebugging(context);
-  }
+      void folder;
+      return built.debugConfig;
+    },
+  };
 }
 
 export function activate(context: vscode.ExtensionContext) {
+  const provider = createDotnetStartDebugConfigurationProvider(context);
+
+  // Provide a dynamic configuration so it shows up in the native F5 picker.
+  context.subscriptions.push(
+    vscode.debug.registerDebugConfigurationProvider(
+      'coreclr',
+      provider,
+      vscode.DebugConfigurationProviderTriggerKind.Dynamic,
+    ),
+  );
+
   context.subscriptions.push(
     vscode.commands.registerCommand('dotnetStart.selectStartProject', async () => {
       await pickCsproj(context);
@@ -245,12 +282,6 @@ export function activate(context: vscode.ExtensionContext) {
   context.subscriptions.push(
     vscode.commands.registerCommand('dotnetStart.start', async () => {
       await startDotnetDebugging(context);
-    }),
-  );
-
-  context.subscriptions.push(
-    vscode.commands.registerCommand('dotnetStart.f5', async () => {
-      await showF5Picker(context);
     }),
   );
 }

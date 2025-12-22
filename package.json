@@ -1,9 +1,9 @@
 {
     "name": "dotnet-start",
+    "version": "0.0.1",
     "displayName": "dotnet-start",
     "description": "Debug session provider for starting dotnet projects",
     "engines": {
-        "version": "0.0.1",
         "vscode": "^1.107.0"
     },
     "categories": [
@@ -23,17 +23,6 @@
             {
                 "command": "dotnetStart.start",
                 "title": "dotnet-start: Start Debugging"
-            },
-            {
-                "command": "dotnetStart.f5",
-                "title": "dotnet-start: F5 Picker"
-            }
-        ],
-        "keybindings": [
-            {
-                "command": "dotnetStart.f5",
-                "key": "f5",
-                "when": "!inDebugMode"
             }
         ]
     },

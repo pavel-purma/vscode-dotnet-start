@@ -4,7 +4,7 @@ VS Code extension that helps you:
 
 - Choose a `.csproj` in your workspace as the **start project**.
 - Choose a `launchSettings.json` **launch profile** (Visual Studio-style profiles).
-- Press `F5` and pick **dotnet-start** to start debugging the selected project/profile.
+- Press `F5` and choose **dotnet-start** in VS Code's native debug configuration picker to start debugging the selected project/profile.
 
 This extension delegates debugging to the installed .NET debugger (`coreclr`).
 
@@ -15,7 +15,7 @@ This extension delegates debugging to the installed .NET debugger (`coreclr`).
 3. In the Extension Host window:
    - Run command: **dotnet-start: Select Start Project (.csproj)**
    - Run command: **dotnet-start: Select Launch Profile (launchSettings.json)**
-   - Press `F5` and pick **dotnet-start**
+   - Press `F5` and pick **dotnet-start** in the native debug configuration picker
 
 Notes:
 

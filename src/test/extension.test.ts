@@ -2,214 +2,238 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
+import {
+  createDotnetStartDebugConfigurationProvider,
+  DOTNET_START_CONFIGURATION_NAME,
+} from '../extension';
+
 type AnyQuickPickItem = vscode.QuickPickItem & Record<string, unknown>;
 
 async function ensureEmptyDir(dirUri: vscode.Uri): Promise<void> {
-	try {
-		await vscode.workspace.fs.delete(dirUri, { recursive: true, useTrash: false });
-	} catch {
-		// ignore
-	}
-	await vscode.workspace.fs.createDirectory(dirUri);
+  try {
+    await vscode.workspace.fs.delete(dirUri, { recursive: true, useTrash: false });
+  } catch {
+    // ignore
+  }
+  await vscode.workspace.fs.createDirectory(dirUri);
 }
 
 async function writeTextFile(fileUri: vscode.Uri, contents: string): Promise<void> {
-	await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(fileUri.fsPath)));
-	await vscode.workspace.fs.writeFile(fileUri, Buffer.from(contents, 'utf8'));
+  await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(fileUri.fsPath)));
+  await vscode.workspace.fs.writeFile(fileUri, Buffer.from(contents, 'utf8'));
 }
 
 function getWorkspaceRoot(): vscode.WorkspaceFolder {
-	const wsFolder = vscode.workspace.workspaceFolders?.[0];
-	assert.ok(wsFolder, 'Expected a workspace folder to be open during extension tests.');
-	return wsFolder;
+  const wsFolder = vscode.workspace.workspaceFolders?.[0];
+  assert.ok(wsFolder, 'Expected a workspace folder to be open during extension tests.');
+  return wsFolder;
 }
 
 suite('dotnet-start extension', () => {
-	let fixtureRoot: vscode.Uri;
-	let csprojUri: vscode.Uri;
-	let launchSettingsUri: vscode.Uri;
+  let fixtureRoot: vscode.Uri;
+  let csprojUri: vscode.Uri;
+  let launchSettingsUri: vscode.Uri;
 
-	setup(async () => {
-		const wsFolder = getWorkspaceRoot();
-		fixtureRoot = vscode.Uri.joinPath(wsFolder.uri, 'out', 'test-fixtures', 'dotnet-start');
-		await ensureEmptyDir(fixtureRoot);
+  setup(async () => {
+    const wsFolder = getWorkspaceRoot();
+    fixtureRoot = vscode.Uri.joinPath(wsFolder.uri, 'out', 'test-fixtures', 'dotnet-start');
+    await ensureEmptyDir(fixtureRoot);
 
-		csprojUri = vscode.Uri.joinPath(fixtureRoot, 'App', 'App.csproj');
-		launchSettingsUri = vscode.Uri.joinPath(fixtureRoot, 'App', 'Properties', 'launchSettings.json');
+    csprojUri = vscode.Uri.joinPath(fixtureRoot, 'App', 'App.csproj');
+    launchSettingsUri = vscode.Uri.joinPath(fixtureRoot, 'App', 'Properties', 'launchSettings.json');
 
-		await writeTextFile(
-			csprojUri,
-			[...
-				'<?xml version="1.0" encoding="utf-8"?>',
-				'<Project Sdk="Microsoft.NET.Sdk">',
-				'  <PropertyGroup>',
-				'    <OutputType>Exe</OutputType>',
-				'    <TargetFramework>net8.0</TargetFramework>',
-				'  </PropertyGroup>',
-				'</Project>',
-			].join('\n'),
-		);
+    await writeTextFile(
+      csprojUri,
+      [...
+        '<?xml version="1.0" encoding="utf-8"?>',
+        '<Project Sdk="Microsoft.NET.Sdk">',
+        '  <PropertyGroup>',
+        '    <OutputType>Exe</OutputType>',
+        '    <TargetFramework>net8.0</TargetFramework>',
+        '  </PropertyGroup>',
+        '</Project>',
+      ].join('\n'),
+    );
 
-		await writeTextFile(
-			launchSettingsUri,
-			JSON.stringify(
-				{
-					profiles: {
-						Dev: {
-							commandName: 'Project',
-						},
-						Prod: {
-							commandName: 'Project',
-						},
-					},
-				},
-				null,
-				2,
-			),
-		);
-	});
+    await writeTextFile(
+      launchSettingsUri,
+      JSON.stringify(
+        {
+          profiles: {
+            Dev: {
+              commandName: 'Project',
+            },
+            Prod: {
+              commandName: 'Project',
+            },
+          },
+        },
+        null,
+        2,
+      ),
+    );
+  });
 
-	teardown(async () => {
-		if (fixtureRoot) {
-			try {
-				await vscode.workspace.fs.delete(fixtureRoot, { recursive: true, useTrash: false });
-			} catch {
-				// ignore
-			}
-		}
-	});
+  teardown(async () => {
+    if (fixtureRoot) {
+      try {
+        await vscode.workspace.fs.delete(fixtureRoot, { recursive: true, useTrash: false });
+      } catch {
+        // ignore
+      }
+    }
+  });
 
-	test('dotnetStart.start starts coreclr debugging with dotnet run args', async () => {
-		const originalShowQuickPick = vscode.window.showQuickPick;
-		const originalStartDebugging = vscode.debug.startDebugging;
+  test('dotnetStart.start starts coreclr debugging with dotnet run args', async () => {
+    const originalShowQuickPick = vscode.window.showQuickPick;
+    const originalStartDebugging = vscode.debug.startDebugging;
 
-		let capturedFolder: vscode.WorkspaceFolder | undefined;
-		let capturedConfig: vscode.DebugConfiguration | undefined;
-		let quickPickCalls = 0;
+    let capturedFolder: vscode.WorkspaceFolder | undefined;
+    let capturedConfig: vscode.DebugConfiguration | undefined;
+    let quickPickCalls = 0;
 
-		try {
-			(vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = (async (
-				items: readonly AnyQuickPickItem[],
-			) => {
-				quickPickCalls++;
-				assert.ok(items.length > 0, 'Expected QuickPick items.');
+    try {
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = (async (
+        items: readonly AnyQuickPickItem[],
+      ) => {
+        quickPickCalls++;
+        assert.ok(items.length > 0, 'Expected QuickPick items.');
 
-				const first = items[0];
-				if (typeof first === 'object' && first && 'uri' in first) {
-					const match = items.find((i) =>
-						typeof i === 'object' &&
-						i &&
-						'uri' in i &&
-						(i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath,
-					);
-					return (match ?? first) as unknown;
-				}
+        const first = items[0];
+        if (typeof first === 'object' && first && 'uri' in first) {
+          const match = items.find((i) =>
+            typeof i === 'object' &&
+            i &&
+            'uri' in i &&
+            (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath,
+          );
+          return (match ?? first) as unknown;
+        }
 
-				if (typeof first === 'object' && first && 'profileName' in first) {
-					const match = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
-					return (match ?? first) as unknown;
-				}
+        if (typeof first === 'object' && first && 'profileName' in first) {
+          const match = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
+          return (match ?? first) as unknown;
+        }
 
-				return first as unknown;
-			}) as unknown;
+        return first as unknown;
+      }) as unknown;
 
-			(vscode.debug as unknown as { startDebugging: unknown }).startDebugging = (async (
-				folder: vscode.WorkspaceFolder,
-				config: vscode.DebugConfiguration,
-			) => {
-				capturedFolder = folder;
-				capturedConfig = config;
-				return true;
-			}) as unknown;
+      (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = (async (
+        folder: vscode.WorkspaceFolder,
+        config: vscode.DebugConfiguration,
+      ) => {
+        capturedFolder = folder;
+        capturedConfig = config;
+        return true;
+      }) as unknown;
 
-			await vscode.commands.executeCommand('dotnetStart.start');
+      await vscode.commands.executeCommand('dotnetStart.start');
 
-			assert.ok(quickPickCalls >= 2, 'Expected csproj + profile QuickPick prompts.');
-			assert.ok(capturedFolder, 'Expected a workspace folder passed to startDebugging.');
-			assert.ok(capturedConfig, 'Expected a debug configuration passed to startDebugging.');
+      assert.ok(quickPickCalls >= 2, 'Expected csproj + profile QuickPick prompts.');
+      assert.ok(capturedFolder, 'Expected a workspace folder passed to startDebugging.');
+      assert.ok(capturedConfig, 'Expected a debug configuration passed to startDebugging.');
 
-			assert.strictEqual(capturedConfig.type, 'coreclr');
-			assert.strictEqual(capturedConfig.request, 'launch');
-			assert.strictEqual(capturedConfig.program, 'dotnet');
-			assert.strictEqual(capturedConfig.console, 'integratedTerminal');
-			assert.strictEqual(capturedConfig.cwd, path.dirname(csprojUri.fsPath));
+      assert.strictEqual(capturedConfig.type, 'coreclr');
+      assert.strictEqual(capturedConfig.request, 'launch');
+      assert.strictEqual(capturedConfig.program, 'dotnet');
+      assert.strictEqual(capturedConfig.console, 'integratedTerminal');
+      assert.strictEqual(capturedConfig.cwd, path.dirname(csprojUri.fsPath));
 
-			assert.deepStrictEqual(capturedConfig.args, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Dev']);
-		} finally {
-			(vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
-			(vscode.debug as unknown as { startDebugging: unknown }).startDebugging = originalStartDebugging as unknown;
-		}
-	});
+      assert.deepStrictEqual(capturedConfig.args, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Dev']);
+    } finally {
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
+      (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = originalStartDebugging as unknown;
+    }
+  });
 
-	test('dotnetStart.f5 shows dotnet-start entry and triggers debugging when picked', async () => {
-		const originalShowQuickPick = vscode.window.showQuickPick;
-		const originalStartDebugging = vscode.debug.startDebugging;
+  test('provides a dotnet-start debug configuration option', async () => {
+    const fakeContext = {
+      workspaceState: {
+        get: () => undefined,
+        update: async () => undefined,
+      },
+    } as unknown as vscode.ExtensionContext;
 
-		let sawF5Item = false;
-		let startDebuggingCalls = 0;
+    const provider = createDotnetStartDebugConfigurationProvider(fakeContext);
+    assert.ok(provider.provideDebugConfigurations, 'Expected provider.provideDebugConfigurations to be defined.');
 
-		try {
-			(vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = (async (
-				items: readonly AnyQuickPickItem[],
-			) => {
-				assert.ok(items.length > 0, 'Expected QuickPick items.');
-				const first = items[0];
-				if (typeof first === 'object' && first && 'action' in first) {
-					sawF5Item = items.some((i) => typeof i === 'object' && i && i.label === 'dotnet-start');
-					return first as unknown; // pick dotnet-start
-				}
+    const configs = await provider.provideDebugConfigurations(undefined);
+    assert.ok(Array.isArray(configs), 'Expected an array of debug configurations.');
 
-				if (typeof first === 'object' && first && 'uri' in first) {
-					return items[0] as unknown;
-				}
+    const dotnetStart = configs.find((c) => c?.name === DOTNET_START_CONFIGURATION_NAME);
+    assert.ok(dotnetStart, 'Expected a debug configuration named dotnet-start.');
+    assert.strictEqual(dotnetStart.type, 'coreclr');
+    assert.strictEqual(dotnetStart.request, 'launch');
+  });
 
-				if (typeof first === 'object' && first && 'profileName' in first) {
-					return items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Prod') as unknown;
-				}
+  test('dotnetStart.selectStartProject shows error when no .csproj exists', async () => {
+    await ensureEmptyDir(fixtureRoot);
+    const csprojs = await vscode.workspace.findFiles('**/*.csproj', '**/{bin,obj,node_modules,.git,.vs}/**');
+    assert.strictEqual(csprojs.length, 0, 'Expected the workspace to contain no .csproj files for this test.');
 
-				return first as unknown;
-			}) as unknown;
+    const originalShowQuickPick = vscode.window.showQuickPick;
+    const originalShowErrorMessage = vscode.window.showErrorMessage;
 
-			(vscode.debug as unknown as { startDebugging: unknown }).startDebugging = (async () => {
-				startDebuggingCalls++;
-				return true;
-			}) as unknown;
+    let errorMessage: string | undefined;
+    try {
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = (async () => {
+        assert.fail('Expected showQuickPick not to be called when no .csproj exists.');
+      }) as unknown;
 
-			await vscode.commands.executeCommand('dotnetStart.f5');
+      (vscode.window as unknown as { showErrorMessage: unknown }).showErrorMessage = (async (message: string) => {
+        errorMessage = message;
+        return undefined;
+      }) as unknown;
 
-			assert.ok(sawF5Item, 'Expected the F5 picker to include a dotnet-start entry.');
-			assert.strictEqual(startDebuggingCalls, 1, 'Expected picking dotnet-start to start debugging once.');
-		} finally {
-			(vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
-			(vscode.debug as unknown as { startDebugging: unknown }).startDebugging = originalStartDebugging as unknown;
-		}
-	});
+      await vscode.commands.executeCommand('dotnetStart.selectStartProject');
 
-	test('dotnetStart.selectStartProject shows error when no .csproj exists', async () => {
-		await ensureEmptyDir(fixtureRoot);
-		const csprojs = await vscode.workspace.findFiles('**/*.csproj', '**/{bin,obj,node_modules,.git,.vs}/**');
-		assert.strictEqual(csprojs.length, 0, 'Expected the workspace to contain no .csproj files for this test.');
+      assert.strictEqual(errorMessage, 'No .csproj files found in this workspace.');
+    } finally {
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
+      (vscode.window as unknown as { showErrorMessage: unknown }).showErrorMessage = originalShowErrorMessage as unknown;
+    }
+  });
 
-		const originalShowQuickPick = vscode.window.showQuickPick;
-		const originalShowErrorMessage = vscode.window.showErrorMessage;
+  test('dotnetStart.selectStartProject shows which .csproj is current', async () => {
+    const originalShowQuickPick = vscode.window.showQuickPick;
 
-		let errorMessage: string | undefined;
-		try {
-			(vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = (async () => {
-				assert.fail('Expected showQuickPick not to be called when no .csproj exists.');
-			}) as unknown;
+    let callIndex = 0;
+    let secondCallSawCurrentLabel = false;
+    let secondCallCurrentIsFirstItem = false;
 
-			(vscode.window as unknown as { showErrorMessage: unknown }).showErrorMessage = (async (message: string) => {
-				errorMessage = message;
-				return undefined;
-			}) as unknown;
+    try {
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = (async (
+        items: readonly AnyQuickPickItem[],
+        _options?: vscode.QuickPickOptions,
+      ) => {
+        callIndex++;
 
-			await vscode.commands.executeCommand('dotnetStart.selectStartProject');
+        const csprojItems = items.filter((i) => typeof i === 'object' && i && 'uri' in i) as Array<
+          AnyQuickPickItem & { uri: vscode.Uri; description?: string }
+        >;
+        assert.ok(csprojItems.length > 0, 'Expected .csproj QuickPick items.');
 
-			assert.strictEqual(errorMessage, 'No .csproj files found in this workspace.');
-		} finally {
-			(vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
-			(vscode.window as unknown as { showErrorMessage: unknown }).showErrorMessage = originalShowErrorMessage as unknown;
-		}
-	});
+        const target = csprojItems.find((i) => i.uri.fsPath === csprojUri.fsPath);
+        assert.ok(target, 'Expected the fixture csproj to appear in QuickPick items.');
+
+        if (callIndex === 2) {
+          secondCallSawCurrentLabel = target.description === 'Current';
+          secondCallCurrentIsFirstItem = csprojItems[0]?.uri.fsPath === csprojUri.fsPath;
+        }
+
+        // Always pick the fixture csproj.
+        return target as unknown;
+      }) as unknown;
+
+      // First selection sets workspaceState.
+      await vscode.commands.executeCommand('dotnetStart.selectStartProject');
+      // Second selection should indicate the current project.
+      await vscode.commands.executeCommand('dotnetStart.selectStartProject');
+
+      assert.ok(secondCallSawCurrentLabel, 'Expected the current .csproj to be labeled as Current.');
+      assert.ok(secondCallCurrentIsFirstItem, 'Expected the current .csproj to be the first item.');
+    } finally {
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
+    }
+  });
 });
