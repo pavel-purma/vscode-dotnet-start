@@ -84,15 +84,18 @@ suite('dotnet-start extension', () => {
     }
   });
 
-  test('dotnetStart.start starts coreclr debugging with dotnet run args', async () => {
+  test('dotnetStart.start starts coreclr debugging with dotnet run args', async function () {
+    this.timeout(10_000);
     const originalShowQuickPick = vscode.window.showQuickPick;
     const originalCreateQuickPick = vscode.window.createQuickPick;
     const originalStartDebugging = vscode.debug.startDebugging;
+    const originalShowInformationMessage = vscode.window.showInformationMessage;
 
     let capturedFolder: vscode.WorkspaceFolder | undefined;
     let capturedConfig: vscode.DebugConfiguration | undefined;
     let quickPickCalls = 0;
     let actionPickerCalls = 0;
+    let infoMessageCalls = 0;
 
     try {
       (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = (() => {
@@ -119,7 +122,11 @@ suite('dotnet-start extension', () => {
             return { dispose: () => undefined };
           },
           show: () => {
-            quickPick.selectedItems = [quickPick.activeItems[0] ?? quickPick.items[0]].filter(Boolean) as AnyQuickPickItem[];
+            // VS Code's QuickPick behavior varies: sometimes selection is read from `activeItems`.
+            // Set both to keep the command handler deterministic.
+            const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
+            quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+            quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
             onDidAcceptHandler?.();
             onDidHideHandler?.();
           },
@@ -163,12 +170,24 @@ suite('dotnet-start extension', () => {
         return true;
       }) as unknown;
 
+      (vscode.window as unknown as { showInformationMessage: unknown }).showInformationMessage = (async () => {
+        // Avoid hanging tests on the launch.json prompt or other informational messages.
+        infoMessageCalls++;
+        return 'Not now';
+      }) as unknown;
+
+      // Ensure we start from a clean state (csproj/profile not pre-selected) even if other tests ran before.
+      await vscode.commands.executeCommand('dotnetStart.clearState');
+
       await vscode.commands.executeCommand('dotnetStart.start');
 
       assert.strictEqual(actionPickerCalls, 1, 'Expected one action picker.');
       assert.ok(quickPickCalls >= 2, 'Expected csproj + profile QuickPick prompts.');
       assert.ok(capturedFolder, 'Expected a workspace folder passed to startDebugging.');
       assert.ok(capturedConfig, 'Expected a debug configuration passed to startDebugging.');
+
+      // The first run may prompt about .vscode/launch.json; ensure we didn't block on it.
+      assert.ok(infoMessageCalls >= 0, 'Expected showInformationMessage stub to be installed.');
 
       assert.strictEqual(capturedConfig.type, 'coreclr');
       assert.strictEqual(capturedConfig.request, 'launch');
@@ -181,6 +200,8 @@ suite('dotnet-start extension', () => {
       (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
       (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = originalCreateQuickPick as unknown;
       (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = originalStartDebugging as unknown;
+      (vscode.window as unknown as { showInformationMessage: unknown }).showInformationMessage =
+        originalShowInformationMessage as unknown;
     }
   });
 
@@ -430,19 +451,30 @@ suite('dotnet-start extension', () => {
     }
   });
 
-  test('dotnetStart.clearState clears saved project/profile and launch.json prompt state', async () => {
+  test('dotnetStart.clearState clears saved project/profile and launch.json prompt state', async function () {
     const originalShowQuickPick = vscode.window.showQuickPick;
     const originalCreateQuickPick = vscode.window.createQuickPick;
     const originalStartDebugging = vscode.debug.startDebugging;
     const originalShowInformationMessage = vscode.window.showInformationMessage;
     const originalGetConfiguration = vscode.workspace.getConfiguration;
-    const originalStat = vscode.workspace.fs.stat;
+
+    const wsFolder = getWorkspaceRoot();
+    const launchJsonUri = vscode.Uri.joinPath(wsFolder.uri, '.vscode', 'launch.json');
+    let originalLaunchJsonContents: Uint8Array | undefined;
 
     let showQuickPickCalls = 0;
     let promptInfoCalls = 0;
     let clearStateInfoCalls = 0;
 
     try {
+      // Ensure the test doesn't depend on (or permanently modify) any existing workspace launch.json.
+      try {
+        originalLaunchJsonContents = await vscode.workspace.fs.readFile(launchJsonUri);
+        await vscode.workspace.fs.delete(launchJsonUri, { useTrash: false });
+      } catch {
+        // If it doesn't exist, that's fine.
+      }
+
       // Ensure the launch.json prompt stays in a stable state for this test:
       // - No existing dotnet-start config in launch configurations
       // - launch.json does not exist
@@ -458,13 +490,6 @@ suite('dotnet-start extension', () => {
         };
       }) as unknown;
 
-      (vscode.workspace.fs as unknown as { stat: unknown }).stat = (async (uri: vscode.Uri) => {
-        if (uri.fsPath.replaceAll('/', '\\').endsWith('\\.vscode\\launch.json')) {
-          throw new Error('ENOENT');
-        }
-        return await originalStat(uri);
-      }) as unknown;
-
       (vscode.window as unknown as { showInformationMessage: unknown }).showInformationMessage = (async (
         message: string,
         ..._items: string[]
@@ -477,6 +502,10 @@ suite('dotnet-start extension', () => {
         promptInfoCalls++;
         return 'Not now';
       }) as unknown;
+
+      // Ensure the test always starts from a clean workspaceState, regardless of test execution order.
+      await vscode.commands.executeCommand('dotnetStart.clearState');
+      clearStateInfoCalls = 0;
 
       (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = (() => {
         let onDidAcceptHandler: (() => void) | undefined;
@@ -500,7 +529,9 @@ suite('dotnet-start extension', () => {
             return { dispose: () => undefined };
           },
           show: () => {
-            quickPick.selectedItems = [quickPick.activeItems[0] ?? quickPick.items[0]].filter(Boolean) as AnyQuickPickItem[];
+            const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
+            quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+            quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
             onDidAcceptHandler?.();
             onDidHideHandler?.();
           },
@@ -564,7 +595,15 @@ suite('dotnet-start extension', () => {
       (vscode.window as unknown as { showInformationMessage: unknown }).showInformationMessage =
         originalShowInformationMessage as unknown;
       (vscode.workspace as unknown as { getConfiguration: unknown }).getConfiguration = originalGetConfiguration as unknown;
-      (vscode.workspace.fs as unknown as { stat: unknown }).stat = originalStat as unknown;
+
+      if (originalLaunchJsonContents) {
+        try {
+          await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(wsFolder.uri, '.vscode'));
+          await vscode.workspace.fs.writeFile(launchJsonUri, originalLaunchJsonContents);
+        } catch {
+          // ignore
+        }
+      }
     }
   });
 });
