@@ -287,6 +287,12 @@ async function getSelectedLaunchProfile(context: vscode.ExtensionContext): Promi
   return context.workspaceState.get<string>(STATE_KEY_LAUNCH_PROFILE);
 }
 
+async function clearSavedState(context: vscode.ExtensionContext): Promise<void> {
+  await context.workspaceState.update(STATE_KEY_CSPROJ, undefined);
+  await context.workspaceState.update(STATE_KEY_LAUNCH_PROFILE, undefined);
+  await context.workspaceState.update(STATE_KEY_LAUNCH_JSON_PROMPT_SHOWN, undefined);
+}
+
 function buildCoreclrDotnetRunConfiguration(csprojUri: vscode.Uri, profile: string): vscode.DebugConfiguration {
   const projectDir = path.dirname(csprojUri.fsPath);
   return {
@@ -572,6 +578,13 @@ export function activate(context: vscode.ExtensionContext) {
       }
 
       void vscode.window.showErrorMessage('Failed to update .vscode/launch.json.');
+    }),
+  );
+
+  context.subscriptions.push(
+    vscode.commands.registerCommand('dotnetStart.clearState', async () => {
+      await clearSavedState(context);
+      void vscode.window.showInformationMessage('Cleared dotnet-start saved state for this workspace.');
     }),
   );
 }

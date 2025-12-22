@@ -429,4 +429,142 @@ suite('dotnet-start extension', () => {
       (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
     }
   });
+
+  test('dotnetStart.clearState clears saved project/profile and launch.json prompt state', async () => {
+    const originalShowQuickPick = vscode.window.showQuickPick;
+    const originalCreateQuickPick = vscode.window.createQuickPick;
+    const originalStartDebugging = vscode.debug.startDebugging;
+    const originalShowInformationMessage = vscode.window.showInformationMessage;
+    const originalGetConfiguration = vscode.workspace.getConfiguration;
+    const originalStat = vscode.workspace.fs.stat;
+
+    let showQuickPickCalls = 0;
+    let promptInfoCalls = 0;
+    let clearStateInfoCalls = 0;
+
+    try {
+      // Ensure the launch.json prompt stays in a stable state for this test:
+      // - No existing dotnet-start config in launch configurations
+      // - launch.json does not exist
+      (vscode.workspace as unknown as { getConfiguration: unknown }).getConfiguration = ((): unknown => {
+        return {
+          get: (section: string) => {
+            if (section === 'configurations') {
+              return [] as vscode.DebugConfiguration[];
+            }
+            return undefined;
+          },
+          update: async () => undefined,
+        };
+      }) as unknown;
+
+      (vscode.workspace.fs as unknown as { stat: unknown }).stat = (async (uri: vscode.Uri) => {
+        if (uri.fsPath.replaceAll('/', '\\').endsWith('\\.vscode\\launch.json')) {
+          throw new Error('ENOENT');
+        }
+        return await originalStat(uri);
+      }) as unknown;
+
+      (vscode.window as unknown as { showInformationMessage: unknown }).showInformationMessage = (async (
+        message: string,
+        ..._items: string[]
+      ) => {
+        if (message.startsWith('Cleared dotnet-start saved state')) {
+          clearStateInfoCalls++;
+          return undefined;
+        }
+
+        promptInfoCalls++;
+        return 'Not now';
+      }) as unknown;
+
+      (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = (() => {
+        let onDidAcceptHandler: (() => void) | undefined;
+        let onDidHideHandler: (() => void) | undefined;
+
+        const quickPick = {
+          items: [] as AnyQuickPickItem[],
+          activeItems: [] as AnyQuickPickItem[],
+          selectedItems: [] as AnyQuickPickItem[],
+          title: undefined as unknown,
+          placeholder: undefined as unknown,
+          onDidAccept: (cb: () => void) => {
+            onDidAcceptHandler = cb;
+            return { dispose: () => undefined };
+          },
+          onDidHide: (cb: () => void) => {
+            onDidHideHandler = cb;
+            return { dispose: () => undefined };
+          },
+          onDidDispose: (_cb: () => void) => {
+            return { dispose: () => undefined };
+          },
+          show: () => {
+            quickPick.selectedItems = [quickPick.activeItems[0] ?? quickPick.items[0]].filter(Boolean) as AnyQuickPickItem[];
+            onDidAcceptHandler?.();
+            onDidHideHandler?.();
+          },
+          dispose: () => undefined,
+        };
+
+        return quickPick as unknown;
+      }) as unknown;
+
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = (async (
+        items: readonly AnyQuickPickItem[],
+      ) => {
+        showQuickPickCalls++;
+        assert.ok(items.length > 0, 'Expected QuickPick items.');
+
+        const first = items[0];
+        if (typeof first === 'object' && first && 'uri' in first) {
+          const match = items.find((i) =>
+            typeof i === 'object' &&
+            i &&
+            'uri' in i &&
+            (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath
+          );
+          return (match ?? first) as unknown;
+        }
+
+        if (typeof first === 'object' && first && 'profileName' in first) {
+          const match = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
+          return (match ?? first) as unknown;
+        }
+
+        return first as unknown;
+      }) as unknown;
+
+      (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = (async () => true) as unknown;
+
+      // First run: should prompt for csproj + profile, and show launch.json prompt.
+      await vscode.commands.executeCommand('dotnetStart.start');
+      assert.ok(showQuickPickCalls >= 2, 'Expected csproj + profile QuickPick prompts on first run.');
+      assert.strictEqual(promptInfoCalls, 1, 'Expected launch.json prompt on first run.');
+
+      // Second run (state saved): no csproj/profile prompts and no launch.json prompt.
+      showQuickPickCalls = 0;
+      await vscode.commands.executeCommand('dotnetStart.start');
+      assert.strictEqual(showQuickPickCalls, 0, 'Expected no csproj/profile prompts when state is saved.');
+      assert.strictEqual(promptInfoCalls, 1, 'Expected launch.json prompt not to repeat when state is saved.');
+
+      // Clear state.
+      await vscode.commands.executeCommand('dotnetStart.clearState');
+      assert.strictEqual(clearStateInfoCalls, 1, 'Expected a confirmation message after clearing state.');
+
+      // Third run (after clearing): should prompt again.
+      showQuickPickCalls = 0;
+      await vscode.commands.executeCommand('dotnetStart.start');
+      assert.ok(showQuickPickCalls >= 2, 'Expected csproj + profile prompts after clearing state.');
+      assert.strictEqual(promptInfoCalls, 2, 'Expected launch.json prompt to show again after clearing state.');
+    } finally {
+      (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
+      (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = originalCreateQuickPick as unknown;
+      (vscode.debug as unknown as { startDebugging: unknown }).startDebugging = originalStartDebugging as unknown;
+      (vscode.window as unknown as { showInformationMessage: unknown }).showInformationMessage =
+        originalShowInformationMessage as unknown;
+      (vscode.workspace as unknown as { getConfiguration: unknown }).getConfiguration = originalGetConfiguration as unknown;
+      (vscode.workspace.fs as unknown as { stat: unknown }).stat = originalStat as unknown;
+    }
+  });
 });

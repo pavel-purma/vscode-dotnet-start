@@ -32,6 +32,10 @@
             {
                 "command": "dotnetStart.addLaunchConfiguration",
                 "title": "dotnet-start: Add dotnet-start to launch.json"
+            },
+            {
+                "command": "dotnetStart.clearState",
+                "title": "dotnet-start: Clear Saved State"
             }
         ],
         "keybindings": [
