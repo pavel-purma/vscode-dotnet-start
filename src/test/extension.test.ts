@@ -451,33 +451,20 @@ suite('dotnet-start extension', () => {
     }
   });
 
-  test('dotnetStart.clearState clears saved project/profile and launch.json prompt state', async function () {
+  test('dotnetStart.clearState clears saved project/profile state', async function () {
     const originalShowQuickPick = vscode.window.showQuickPick;
     const originalCreateQuickPick = vscode.window.createQuickPick;
     const originalStartDebugging = vscode.debug.startDebugging;
     const originalShowInformationMessage = vscode.window.showInformationMessage;
     const originalGetConfiguration = vscode.workspace.getConfiguration;
 
-    const wsFolder = getWorkspaceRoot();
-    const launchJsonUri = vscode.Uri.joinPath(wsFolder.uri, '.vscode', 'launch.json');
-    let originalLaunchJsonContents: Uint8Array | undefined;
-
     let showQuickPickCalls = 0;
     let promptInfoCalls = 0;
     let clearStateInfoCalls = 0;
 
     try {
-      // Ensure the test doesn't depend on (or permanently modify) any existing workspace launch.json.
-      try {
-        originalLaunchJsonContents = await vscode.workspace.fs.readFile(launchJsonUri);
-        await vscode.workspace.fs.delete(launchJsonUri, { useTrash: false });
-      } catch {
-        // If it doesn't exist, that's fine.
-      }
-
-      // Ensure the launch.json prompt stays in a stable state for this test:
+      // Ensure the action picker is stable for this test:
       // - No existing dotnet-start config in launch configurations
-      // - launch.json does not exist
       (vscode.workspace as unknown as { getConfiguration: unknown }).getConfiguration = ((): unknown => {
         return {
           get: (section: string) => {
@@ -571,13 +558,13 @@ suite('dotnet-start extension', () => {
       // First run: should prompt for csproj + profile, and show launch.json prompt.
       await vscode.commands.executeCommand('dotnetStart.start');
       assert.ok(showQuickPickCalls >= 2, 'Expected csproj + profile QuickPick prompts on first run.');
-      assert.strictEqual(promptInfoCalls, 1, 'Expected launch.json prompt on first run.');
+      assert.strictEqual(promptInfoCalls, 0, 'Did not expect any informational prompts during dotnetStart.start.');
 
       // Second run (state saved): no csproj/profile prompts and no launch.json prompt.
       showQuickPickCalls = 0;
       await vscode.commands.executeCommand('dotnetStart.start');
       assert.strictEqual(showQuickPickCalls, 0, 'Expected no csproj/profile prompts when state is saved.');
-      assert.strictEqual(promptInfoCalls, 1, 'Expected launch.json prompt not to repeat when state is saved.');
+      assert.strictEqual(promptInfoCalls, 0, 'Did not expect any informational prompts during dotnetStart.start.');
 
       // Clear state.
       await vscode.commands.executeCommand('dotnetStart.clearState');
@@ -587,7 +574,7 @@ suite('dotnet-start extension', () => {
       showQuickPickCalls = 0;
       await vscode.commands.executeCommand('dotnetStart.start');
       assert.ok(showQuickPickCalls >= 2, 'Expected csproj + profile prompts after clearing state.');
-      assert.strictEqual(promptInfoCalls, 2, 'Expected launch.json prompt to show again after clearing state.');
+      assert.strictEqual(promptInfoCalls, 0, 'Did not expect any informational prompts during dotnetStart.start.');
     } finally {
       (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
       (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = originalCreateQuickPick as unknown;
@@ -595,15 +582,6 @@ suite('dotnet-start extension', () => {
       (vscode.window as unknown as { showInformationMessage: unknown }).showInformationMessage =
         originalShowInformationMessage as unknown;
       (vscode.workspace as unknown as { getConfiguration: unknown }).getConfiguration = originalGetConfiguration as unknown;
-
-      if (originalLaunchJsonContents) {
-        try {
-          await vscode.workspace.fs.createDirectory(vscode.Uri.joinPath(wsFolder.uri, '.vscode'));
-          await vscode.workspace.fs.writeFile(launchJsonUri, originalLaunchJsonContents);
-        } catch {
-          // ignore
-        }
-      }
     }
   });
 });
