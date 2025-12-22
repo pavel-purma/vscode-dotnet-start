@@ -3,6 +3,7 @@
     "version": "0.0.1",
     "displayName": "dotnet-start",
     "description": "Debug session provider for starting dotnet projects",
+    "icon": "media/icon.png",
     "activationEvents": [
         "onDebugDynamicConfigurations",
         "onDebugInitialConfigurations",
