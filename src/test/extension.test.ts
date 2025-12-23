@@ -7,6 +7,9 @@ import {
   createDotnetStartDebugConfigurationProvider
 } from '../extension';
 import { CsprojService } from '../services/csprojService';
+import {
+  MsbuildProjectPropertiesService,
+} from '../services/msbuildProjectPropertiesService';
 
 type AnyQuickPickItem = vscode.QuickPickItem & Record<string, unknown>;
 
@@ -368,7 +371,7 @@ suite('dotnet-start extension', () => {
   });
 
   test('msbuild properties: parses values from JSON output returned by dotnet msbuild -getProperty', () => {
-    const csprojService = new CsprojService();
+    const msbuild = new MsbuildProjectPropertiesService();
     const output = JSON.stringify(
       {
         Properties: {
@@ -382,9 +385,16 @@ suite('dotnet-start extension', () => {
       2,
     );
 
-    const props = (csprojService as unknown as {
-      parseMsbuildProperties: (output: string, names: readonly string[]) => Record<string, string | undefined>;
-    }).parseMsbuildProperties(output, ['TargetPath', 'TargetFramework', 'TargetFrameworks', 'OutputPath']);
+    const parsed = (msbuild as unknown as {
+      parseMsbuildProperties: (output: string) => Record<string, string | undefined>;
+    }).parseMsbuildProperties(output);
+
+    const props: Record<string, string | undefined> = {
+      TargetPath: parsed.TargetPath,
+      TargetFramework: parsed.TargetFramework,
+      TargetFrameworks: parsed.TargetFrameworks,
+      OutputPath: parsed.OutputPath,
+    };
 
     assert.strictEqual(props.TargetPath, 'C:\\repos\\test\\src\\_build\\bin\\Test\\net10.0\\Test.dll');
     assert.strictEqual(props.TargetFramework, 'net10.0');

@@ -1,6 +1,4 @@
 import * as path from 'path';
-import * as os from 'os';
-import * as fs from 'fs/promises';
 import * as vscode from 'vscode';
 import { execFile } from 'child_process';
 import { promisify } from 'util';
@@ -23,6 +21,7 @@ export type MsbuildProjectProperties = {
  * Fetches and parses MSBuild project properties using `dotnet msbuild -getProperty:*`.
  */
 export class MsbuildProjectPropertiesService {
+
   public async getMsbuildProjectProperties(
     csprojUri: vscode.Uri,
     options: { configuration: 'Debug' | 'Release' },
@@ -102,7 +101,7 @@ export class MsbuildProjectPropertiesService {
 
     const outputPath = path.isAbsolute(outputPathRaw) ? outputPathRaw : path.join(projectDir, outputPathRaw);
 
-    const appendTfm = this.convertMsbuildPropertyToBoolean(props.AppendTargetFrameworkToOutputPath);
+    const appendTfm = MsbuildProjectPropertiesService.convertMsbuildPropertyToBoolean(props.AppendTargetFrameworkToOutputPath);
     const shouldAppendTfm = tfm && (appendTfm ?? true);
 
     const normalizedOutputParts = path
@@ -132,7 +131,7 @@ export class MsbuildProjectPropertiesService {
       .filter((v) => v.length > 0);
   }
 
-  private convertMsbuildPropertyToBoolean(value: string | undefined): boolean | undefined {
+  private static convertMsbuildPropertyToBoolean(value: string | undefined): boolean | undefined {
     if (!value) {
       return undefined;
     }

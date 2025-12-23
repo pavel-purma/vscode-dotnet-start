@@ -318,9 +318,15 @@ export class CsprojService {
     const projectDir = path.dirname(csprojUri.fsPath);
     const projectName = path.parse(csprojUri.fsPath).name;
 
-    const props: MsbuildProjectProperties | undefined = await this.msbuild.getMsbuildProjectProperties(csprojUri, {
-      configuration: 'Debug',
-    });
+    let props: MsbuildProjectProperties | undefined;
+    try {
+      props = await this.msbuild.getMsbuildProjectProperties(csprojUri, {
+        configuration: 'Debug',
+      });
+    } catch (e) {
+      this.log(`Failed to fetch MSBuild properties (dotnet msbuild -getProperty:*): ${String(e)}`);
+      props = undefined;
+    }
     if (props) {
       this.log('MSBuild properties fetched successfully.');
       this.logMsbuildProjectProperties(props);
