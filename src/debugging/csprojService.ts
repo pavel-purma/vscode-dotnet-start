@@ -276,11 +276,14 @@ export class CsprojService {
       return { binaryUri: fallback, source: 'fallback-search' };
     }
 
+    const projectDir = path.dirname(csprojUri.fsPath);
     const props: MsbuildProjectProperties | undefined = await this.msbuild.tryGetProjectProperties(csprojUri, { configuration: 'Debug' });
     if (props) {
       const directTargetPath = props.TargetPath && props.TargetPath.trim().length > 0 ? props.TargetPath : undefined;
       if (directTargetPath) {
-        return { binaryUri: vscode.Uri.file(directTargetPath), source: 'msbuild' };
+        const normalized = directTargetPath.trim();
+        const absolute = path.isAbsolute(normalized) ? normalized : path.join(projectDir, normalized);
+        return { binaryUri: vscode.Uri.file(absolute), source: 'msbuild' };
       }
 
       const computed = this.msbuild.computeExpectedTargetPath(csprojUri, 'Debug', props);

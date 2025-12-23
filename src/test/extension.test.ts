@@ -419,6 +419,49 @@ suite('dotnet-start extension', () => {
     assert.strictEqual(props.AppendTargetFrameworkToOutputPath, 'true');
   });
 
+  test('msbuild properties: TargetFramework does not match TargetFrameworks, and TargetFrameworks drives tfm folder', () => {
+    const csprojService = new CsprojService();
+    const csproj = vscode.Uri.file(path.join('C:', 'repo', 'App', 'App.csproj'));
+
+    const output = [
+      'TargetFrameworks = net8.0;net9.0',
+      'OutputPath = bin\\Debug\\',
+      'AssemblyName = App',
+      'TargetExt = .dll',
+      'AppendTargetFrameworkToOutputPath = true',
+    ].join('\n');
+
+    const props = (csprojService as unknown as {
+      parseMsbuildProperties: (output: string, names: readonly string[]) => Record<string, string | undefined>;
+      computeExpectedTargetPathFromMsbuildProperties: (
+        csprojUri: vscode.Uri,
+        configuration: 'Debug' | 'Release',
+        props: Record<string, string | undefined>,
+      ) => string | undefined;
+    }).parseMsbuildProperties(output, [
+      'TargetFramework',
+      'TargetFrameworks',
+      'OutputPath',
+      'AssemblyName',
+      'TargetExt',
+      'AppendTargetFrameworkToOutputPath',
+    ]);
+
+    assert.strictEqual(props.TargetFramework, undefined);
+    assert.strictEqual(props.TargetFrameworks, 'net8.0;net9.0');
+
+    const computed = (csprojService as unknown as {
+      computeExpectedTargetPathFromMsbuildProperties: (
+        csprojUri: vscode.Uri,
+        configuration: 'Debug' | 'Release',
+        props: Record<string, string | undefined>,
+      ) => string | undefined;
+    }).computeExpectedTargetPathFromMsbuildProperties(csproj, 'Debug', props);
+
+    const expected = path.join('C:', 'repo', 'App', 'bin', 'Debug', 'net8.0', 'App.dll');
+    assert.strictEqual(computed?.toLowerCase(), expected.toLowerCase());
+  });
+
   test('dotnetStart.addLaunchConfiguration adds a dotnet-start entry to launch configurations', async () => {
     let restoreGetConfiguration: (() => void) | undefined;
     let restoreShowInformationMessage: (() => void) | undefined;

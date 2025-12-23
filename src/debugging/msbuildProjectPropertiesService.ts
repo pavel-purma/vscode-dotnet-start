@@ -122,17 +122,17 @@ export class MsbuildProjectPropertiesService {
         continue;
       }
 
-      const idx = line.indexOf('=');
-      if (idx >= 0) {
-        const value = line.slice(idx + 1).trim();
-        if (value.length > 0) {
-          return value;
-        }
+      // Avoid prefix collisions like TargetFramework vs TargetFrameworks.
+      const boundary = lower.slice(propertyLower.length, propertyLower.length + 1);
+      if (boundary.length > 0 && boundary !== ' ' && boundary !== '\t' && boundary !== '=' && boundary !== ':') {
+        continue;
       }
 
-      const colonIdx = line.indexOf(':');
-      if (colonIdx >= 0) {
-        const value = line.slice(colonIdx + 1).trim();
+      // Trim the property name off and parse the remainder.
+      const remainder = line.slice(propertyName.length).trimStart();
+      if (remainder.length > 0) {
+        const first = remainder[0];
+        const value = (first === '=' || first === ':') ? remainder.slice(1).trim() : remainder.trim();
         if (value.length > 0) {
           return value;
         }
