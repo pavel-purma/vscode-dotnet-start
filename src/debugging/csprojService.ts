@@ -29,6 +29,18 @@ type LaunchProfileDetails = {
 export class CsprojService {
   private readonly msbuild = new MsbuildProjectPropertiesService();
 
+  public parseMsbuildProperties(output: string, names: readonly string[]): Record<string, string | undefined> {
+    return this.msbuild.parseMsbuildProperties(output, names);
+  }
+
+  public computeExpectedTargetPathFromMsbuildProperties(
+    csprojUri: vscode.Uri,
+    configuration: 'Debug' | 'Release',
+    props: Record<string, string | undefined>,
+  ): string | undefined {
+    return this.msbuild.computeExpectedTargetPath(csprojUri, configuration, props as MsbuildProjectProperties);
+  }
+
   public async getLaunchSettingsUriForProject(csprojUri: vscode.Uri): Promise<vscode.Uri | undefined> {
     const projectDir = path.dirname(csprojUri.fsPath);
     const candidates = [

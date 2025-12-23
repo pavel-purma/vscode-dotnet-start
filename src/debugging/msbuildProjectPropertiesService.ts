@@ -162,15 +162,14 @@ export class MsbuildProjectPropertiesService {
     return undefined;
   }
 
-  private parseMsbuildProperties(
-    output: string,
-    propertyNames: readonly (keyof MsbuildProjectProperties)[],
-  ): MsbuildProjectProperties {
-    const result: MsbuildProjectProperties = {};
+  public parseMsbuildProperties(output: string, propertyNames: readonly (keyof MsbuildProjectProperties)[]): MsbuildProjectProperties;
+  public parseMsbuildProperties(output: string, propertyNames: readonly string[]): Record<string, string | undefined>;
+  public parseMsbuildProperties(output: string, propertyNames: readonly string[]): Record<string, string | undefined> {
+    const result: Record<string, string | undefined> = {};
     for (const name of propertyNames) {
       const value = this.parseMsbuildGetPropertyOutput(String(name), output);
       if (value !== undefined) {
-        result[name] = value;
+        result[String(name)] = value;
       }
     }
     return result;
