@@ -12,6 +12,18 @@ type LaunchProfileDetails = {
   environmentVariables?: Record<string, string>;
 };
 
+type MsbuildProjectProperties = {
+  TargetPath?: string;
+  TargetFramework?: string;
+  TargetFrameworks?: string;
+  OutputPath?: string;
+  BaseOutputPath?: string;
+  AssemblyName?: string;
+  TargetExt?: string;
+  TargetFileName?: string;
+  AppendTargetFrameworkToOutputPath?: string;
+};
+
 /**
  * Builds and starts `coreclr` debug configurations for a selected `.csproj` + launch profile.
  *
@@ -283,22 +295,85 @@ export class DotnetStartDebugService {
     return undefined;
   }
 
-  private async tryGetMsbuildTargetPath(
+  private parseBooleanMsbuildProperty(value: string | undefined): boolean | undefined {
+    if (!value) {
+      return undefined;
+    }
+
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') {
+      return true;
+    }
+    if (normalized === 'false') {
+      return false;
+    }
+    return undefined;
+  }
+
+  private parseMsbuildProperties(output: string, propertyNames: readonly (keyof MsbuildProjectProperties)[]): MsbuildProjectProperties {
+    const result: MsbuildProjectProperties = {};
+    for (const name of propertyNames) {
+      const value = this.parseMsbuildGetPropertyOutput(String(name), output);
+      if (value !== undefined) {
+        result[name] = value;
+      }
+    }
+    return result;
+  }
+
+  private computeExpectedTargetPathFromMsbuildProperties(
     csprojUri: vscode.Uri,
-    options: { configuration: 'Debug' | 'Release'; targetFramework?: string },
-  ): Promise<string | undefined> {
+    configuration: 'Debug' | 'Release',
+    props: MsbuildProjectProperties,
+  ): string | undefined {
+    const projectDir = path.dirname(csprojUri.fsPath);
+    const projectName = path.parse(csprojUri.fsPath).name;
+
+    const tfm = props.TargetFramework ?? this.splitSemicolonList(props.TargetFrameworks)[0];
+
+    const outputPathRaw = (props.OutputPath && props.OutputPath.trim().length > 0 ? props.OutputPath : undefined) ??
+      (props.BaseOutputPath && props.BaseOutputPath.trim().length > 0 ? props.BaseOutputPath : undefined) ??
+      path.join('bin', configuration, path.sep);
+
+    const outputPath = path.isAbsolute(outputPathRaw) ? outputPathRaw : path.join(projectDir, outputPathRaw);
+
+    const appendTfm = this.parseBooleanMsbuildProperty(props.AppendTargetFrameworkToOutputPath);
+    const shouldAppendTfm = tfm && (appendTfm ?? true);
+
+    const normalizedOutputParts = path
+      .normalize(outputPath)
+      .split(path.sep)
+      .filter((p) => p.length > 0)
+      .map((p) => p.toLowerCase());
+
+    const outputDir = shouldAppendTfm && !normalizedOutputParts.includes(tfm.toLowerCase()) ? path.join(outputPath, tfm) : outputPath;
+
+    const targetFileName =
+      (props.TargetFileName && props.TargetFileName.trim().length > 0 ? props.TargetFileName : undefined) ??
+      `${props.AssemblyName && props.AssemblyName.trim().length > 0 ? props.AssemblyName : projectName}${props.TargetExt ?? '.dll'}`;
+
+    return path.join(outputDir, targetFileName);
+  }
+
+  private async tryGetMsbuildProjectProperties(
+    csprojUri: vscode.Uri,
+    options: { configuration: 'Debug' | 'Release' },
+  ): Promise<MsbuildProjectProperties | undefined> {
     const projectDir = path.dirname(csprojUri.fsPath);
 
-    const args = [
-      'msbuild',
-      csprojUri.fsPath,
-      '-nologo',
-      '-getProperty:TargetPath',
-      `-property:Configuration=${options.configuration}`,
+    const propertyNames: readonly (keyof MsbuildProjectProperties)[] = [
+      'TargetPath',
+      'TargetFramework',
+      'TargetFrameworks',
+      'OutputPath',
+      'BaseOutputPath',
+      'AssemblyName',
+      'TargetExt',
+      'TargetFileName',
+      'AppendTargetFrameworkToOutputPath',
     ];
-    if (options.targetFramework) {
-      args.push(`-property:TargetFramework=${options.targetFramework}`);
-    }
+
+    const args = ['msbuild', csprojUri.fsPath, '-nologo', ...propertyNames.map((p) => `-getProperty:${String(p)}`), `-property:Configuration=${options.configuration}`];
 
     try {
       const { stdout, stderr } = await execFileAsync('dotnet', args, {
@@ -307,34 +382,7 @@ export class DotnetStartDebugService {
         timeout: 15_000,
       });
       const combined = `${stdout}\n${stderr}`;
-      const value = this.parseMsbuildGetPropertyOutput('TargetPath', combined);
-      return value && value.length > 0 ? value : undefined;
-    } catch {
-      return undefined;
-    }
-  }
-
-  private async tryGetMsbuildTargetFramework(csprojUri: vscode.Uri): Promise<string | undefined> {
-    const projectDir = path.dirname(csprojUri.fsPath);
-    try {
-      const { stdout, stderr } = await execFileAsync(
-        'dotnet',
-        [
-          'msbuild',
-          csprojUri.fsPath,
-          '-nologo',
-          '-getProperty:TargetFramework',
-          '-getProperty:TargetFrameworks',
-        ],
-        { cwd: projectDir, windowsHide: true, timeout: 15_000 },
-      );
-      const combined = `${stdout}\n${stderr}`;
-      const single = this.parseMsbuildGetPropertyOutput('TargetFramework', combined);
-      if (single) {
-        return single;
-      }
-      const multi = this.parseMsbuildGetPropertyOutput('TargetFrameworks', combined);
-      return this.splitSemicolonList(multi)[0];
+      return this.parseMsbuildProperties(combined, propertyNames);
     } catch {
       return undefined;
     }
@@ -376,16 +424,16 @@ export class DotnetStartDebugService {
       return { binaryUri: fallback, source: 'fallback-search' };
     }
 
-    const directTargetPath = await this.tryGetMsbuildTargetPath(csprojUri, { configuration: 'Debug' });
-    if (directTargetPath) {
-      return { binaryUri: vscode.Uri.file(directTargetPath), source: 'msbuild' };
-    }
+    const props = await this.tryGetMsbuildProjectProperties(csprojUri, { configuration: 'Debug' });
+    if (props) {
+      const directTargetPath = props.TargetPath && props.TargetPath.trim().length > 0 ? props.TargetPath : undefined;
+      if (directTargetPath) {
+        return { binaryUri: vscode.Uri.file(directTargetPath), source: 'msbuild' };
+      }
 
-    const tfm = await this.tryGetMsbuildTargetFramework(csprojUri);
-    if (tfm) {
-      const tfmTargetPath = await this.tryGetMsbuildTargetPath(csprojUri, { configuration: 'Debug', targetFramework: tfm });
-      if (tfmTargetPath) {
-        return { binaryUri: vscode.Uri.file(tfmTargetPath), source: 'msbuild' };
+      const computed = this.computeExpectedTargetPathFromMsbuildProperties(csprojUri, 'Debug', props);
+      if (computed) {
+        return { binaryUri: vscode.Uri.file(computed), source: 'msbuild' };
       }
     }
 

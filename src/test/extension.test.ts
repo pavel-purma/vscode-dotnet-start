@@ -6,6 +6,7 @@ import {
   createDotnetStartDebugConfigurationProvider,
   DOTNET_START_CONFIGURATION_NAME,
 } from '../extension';
+import { DotnetStartDebugService } from '../debugging/dotnetStartDebugService';
 
 type AnyQuickPickItem = vscode.QuickPickItem & Record<string, unknown>;
 
@@ -327,6 +328,58 @@ suite('dotnet-start extension', () => {
       restoreCreateQuickPick?.();
       restoreStartDebugging?.();
     }
+  });
+
+  test('msbuild properties: computes expected TargetPath when TargetPath is missing', () => {
+    const service = new DotnetStartDebugService();
+    const csproj = vscode.Uri.file(path.join('C:', 'repo', 'App', 'App.csproj'));
+
+    const computed = (service as unknown as {
+      computeExpectedTargetPathFromMsbuildProperties: (
+        csprojUri: vscode.Uri,
+        configuration: 'Debug' | 'Release',
+        props: Record<string, string | undefined>,
+      ) => string | undefined;
+    }).computeExpectedTargetPathFromMsbuildProperties(csproj, 'Debug', {
+      TargetFramework: 'net8.0',
+      OutputPath: path.join('bin', 'Debug') + path.sep,
+      AssemblyName: 'App',
+      TargetExt: '.dll',
+      AppendTargetFrameworkToOutputPath: 'true',
+    });
+
+    const expected = path.join('C:', 'repo', 'App', 'bin', 'Debug', 'net8.0', 'App.dll');
+    assert.strictEqual(computed?.toLowerCase(), expected.toLowerCase());
+  });
+
+  test('msbuild properties: parses multiple values from a single msbuild output blob', () => {
+    const service = new DotnetStartDebugService();
+    const output = [
+      'TargetFramework = net8.0',
+      'TargetFrameworks = net8.0;net9.0',
+      'OutputPath = bin\\Debug\\',
+      'AssemblyName = MyApp',
+      'TargetExt = .dll',
+      'AppendTargetFrameworkToOutputPath = true',
+    ].join('\n');
+
+    const props = (service as unknown as {
+      parseMsbuildProperties: (output: string, names: readonly string[]) => Record<string, string | undefined>;
+    }).parseMsbuildProperties(output, [
+      'TargetFramework',
+      'TargetFrameworks',
+      'OutputPath',
+      'AssemblyName',
+      'TargetExt',
+      'AppendTargetFrameworkToOutputPath',
+    ]);
+
+    assert.strictEqual(props.TargetFramework, 'net8.0');
+    assert.strictEqual(props.TargetFrameworks, 'net8.0;net9.0');
+    assert.strictEqual(props.OutputPath, 'bin\\Debug\\');
+    assert.strictEqual(props.AssemblyName, 'MyApp');
+    assert.strictEqual(props.TargetExt, '.dll');
+    assert.strictEqual(props.AppendTargetFrameworkToOutputPath, 'true');
   });
 
   test('dotnetStart.addLaunchConfiguration adds a dotnet-start entry to launch configurations', async () => {
