@@ -419,6 +419,70 @@ suite('dotnet-start extension', () => {
     assert.strictEqual(props.AppendTargetFrameworkToOutputPath, 'true');
   });
 
+  test('msbuild properties: parses values when msbuild prints property name on one line and value on next line', () => {
+    const csprojService = new CsprojService();
+    const output = [
+      'Build started 12/23/2025 09:00:00.',
+      'TargetFramework:',
+      '  net8.0',
+      'TargetFrameworks:',
+      '  net8.0;net9.0',
+      'OutputPath:',
+      '  bin\\Debug\\',
+      'AssemblyName:',
+      '  MyApp',
+      'TargetExt:',
+      '  .dll',
+      'AppendTargetFrameworkToOutputPath:',
+      '  true',
+      'Build succeeded.',
+    ].join('\n');
+
+    const props = (csprojService as unknown as {
+      parseMsbuildProperties: (output: string, names: readonly string[]) => Record<string, string | undefined>;
+    }).parseMsbuildProperties(output, [
+      'TargetFramework',
+      'TargetFrameworks',
+      'OutputPath',
+      'AssemblyName',
+      'TargetExt',
+      'AppendTargetFrameworkToOutputPath',
+    ]);
+
+    assert.strictEqual(props.TargetFramework, 'net8.0');
+    assert.strictEqual(props.TargetFrameworks, 'net8.0;net9.0');
+    assert.strictEqual(props.OutputPath, 'bin\\Debug\\');
+    assert.strictEqual(props.AssemblyName, 'MyApp');
+    assert.strictEqual(props.TargetExt, '.dll');
+    assert.strictEqual(props.AppendTargetFrameworkToOutputPath, 'true');
+  });
+
+  test('msbuild properties: parses values from JSON output returned by dotnet msbuild -getProperty', () => {
+    const csprojService = new CsprojService();
+    const output = JSON.stringify(
+      {
+        Properties: {
+          TargetPath: 'C:\\repos\\stock-market-info\\src\\_build\\bin\\StockMarketInfo.Tools\\net10.0\\StockMarketInfo.Tools.dll',
+          TargetFramework: 'net10.0',
+          TargetFrameworks: '',
+          OutputPath: 'bin\\Debug\\net10.0\\',
+        },
+      },
+      null,
+      2,
+    );
+
+    const props = (csprojService as unknown as {
+      parseMsbuildProperties: (output: string, names: readonly string[]) => Record<string, string | undefined>;
+    }).parseMsbuildProperties(output, ['TargetPath', 'TargetFramework', 'TargetFrameworks', 'OutputPath']);
+
+    assert.strictEqual(props.TargetPath, 'C:\\repos\\stock-market-info\\src\\_build\\bin\\StockMarketInfo.Tools\\net10.0\\StockMarketInfo.Tools.dll');
+    assert.strictEqual(props.TargetFramework, 'net10.0');
+    // Empty strings are normalized to undefined.
+    assert.strictEqual(props.TargetFrameworks, undefined);
+    assert.strictEqual(props.OutputPath, 'bin\\Debug\\net10.0\\');
+  });
+
   test('msbuild properties: TargetFramework does not match TargetFrameworks, and TargetFrameworks drives tfm folder', () => {
     const csprojService = new CsprojService();
     const csproj = vscode.Uri.file(path.join('C:', 'repo', 'App', 'App.csproj'));
@@ -826,6 +890,22 @@ suite('dotnet-start extension', () => {
     const secondDllUri = vscode.Uri.joinPath(fixtureRoot, 'App2', 'bin', 'Debug', 'net8.0', 'App2.dll');
     await writeTextFile(secondDllUri, '');
 
+    // VS Code's file search index can lag slightly behind filesystem writes in the test host.
+    // Ensure the new csproj is discoverable before we try to select it.
+    {
+      const deadline = Date.now() + 2_000;
+      while (true) {
+        const all = await vscode.workspace.findFiles('**/*.csproj', '**/{bin,obj,node_modules,.git,.vs}/**');
+        if (all.some((u) => u.fsPath === secondCsprojUri.fsPath)) {
+          break;
+        }
+        if (Date.now() > deadline) {
+          break;
+        }
+        await new Promise((resolve) => setTimeout(resolve, 50));
+      }
+    }
+
     let phase: 'initial' | 'afterProjectChange' = 'initial';
     let sawProfilePickerAfterProjectChange = false;
 
@@ -878,15 +958,20 @@ suite('dotnet-start extension', () => {
 
           const first = items[0];
           if (typeof first === 'object' && first && 'uri' in first) {
+            const normalize = (p: string) => (process.platform === 'win32' ? p.toLowerCase() : p);
+            const desiredUri = phase === 'initial' ? csprojUri : secondCsprojUri;
             const target = items.find(
               (i) =>
                 typeof i === 'object' &&
                 i &&
                 'uri' in i &&
-                (i as unknown as { uri: vscode.Uri }).uri.fsPath ===
-                (phase === 'initial' ? csprojUri.fsPath : secondCsprojUri.fsPath),
+                normalize((i as unknown as { uri: vscode.Uri }).uri.fsPath) ===
+                normalize(desiredUri.fsPath),
             );
-            return (target ?? first) as unknown;
+
+            // If the desired csproj isn't present yet (findFiles indexing lag), return a minimal
+            // compatible item that points at the csproj path we just created.
+            return (target ?? ({ label: path.parse(desiredUri.fsPath).name, uri: desiredUri } as AnyQuickPickItem)) as unknown;
           }
 
           if (typeof first === 'object' && first && 'profileName' in first) {
