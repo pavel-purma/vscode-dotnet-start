@@ -2,13 +2,12 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 import * as childProcess from 'child_process';
 import * as readline from 'readline';
-import { promisify } from 'util';
 
 import {
   MsbuildProjectProperties,
   MsbuildProjectPropertiesService,
 } from './msbuildProjectPropertiesService';
-import { OutputChannelService } from '../output/outputChannelService';
+import { OutputChannelService } from './outputChannelService';
 
 type LaunchProfileDetails = {
   commandName?: string;

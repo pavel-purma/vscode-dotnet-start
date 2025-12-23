@@ -6,7 +6,7 @@ import {
   createDotnetStartDebugConfigurationProvider,
   DOTNET_START_CONFIGURATION_NAME,
 } from '../extension';
-import { CsprojService } from '../debugging/csprojService';
+import { CsprojService } from '../services/csprojService';
 
 type AnyQuickPickItem = vscode.QuickPickItem & Record<string, unknown>;
 

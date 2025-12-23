@@ -1,8 +1,8 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-import { CsprojService } from './debugging/csprojService';
-import { OutputChannelService } from './output/outputChannelService';
+import { CsprojService } from './services/csprojService';
+import { OutputChannelService } from './services/outputChannelService';
 
 const STATE_KEY_CSPROJ = 'dotnet-start.selected-csproj-uri';
 const STATE_KEY_LAUNCH_PROFILE = 'dotnet-start.selected-launch-profile';
