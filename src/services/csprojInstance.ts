@@ -100,7 +100,7 @@ export class CsprojInstance {
     return names;
   }
 
-  public async buildCoreclrDotnetStartConfiguration(options: {
+  public async createVscodeDebugConfiguration(options: {
     profileName: string;
     configurationName: string;
   }): Promise<vscode.DebugConfiguration | undefined> {
@@ -380,7 +380,7 @@ export class CsprojInstance {
     };
   }
 
-  private async runDotnetBuild(
+  private async runDotnetBuildInternal(
     options?: {
       onStdoutLine?: (line: string) => void;
       onStderrLine?: (line: string) => void;
@@ -493,7 +493,7 @@ export class CsprojInstance {
     output.appendLine('');
     output.show(true);
 
-    const result = await this.runDotnetBuild({
+    const result = await this.runDotnetBuildInternal({
       onStdoutLine: (line) => output.appendLine(line),
       onStderrLine: (line) => output.appendLine(line),
     });

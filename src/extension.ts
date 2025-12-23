@@ -45,22 +45,14 @@ async function addDotnetStartLaunchConfigurationToLaunchJson(
   }
 }
 
-async function initiateVscodeDebugger(csprojUri: vscode.Uri, profileName: string) {
+async function buildDotnetProject(csproj: CsprojInstance) {
   const output = OutputChannelService.channel;
-
-  const csproj = new CsprojInstance(csprojUri);
-  const debugConfig = await csproj.buildCoreclrDotnetStartConfiguration({
-    profileName: profileName,
-    configurationName: constants.DOTNET_START_CONFIGURATION_NAME,
-  });
-  if (!debugConfig) {
-    return undefined;
-  }
 
   const buildOk = await csproj.runDotnetBuildAndPipeOutput();
   if (!buildOk) {
     output.appendLine('');
     output.appendLine('Build status: FAILED');
+    output.appendLine('');
     void vscode.window.showErrorMessage(
       'dotnet build failed. See Output → dotnet-start for details.',
     );
@@ -69,7 +61,23 @@ async function initiateVscodeDebugger(csprojUri: vscode.Uri, profileName: string
 
   output.appendLine('');
   output.appendLine('Build status: SUCCEEDED');
+  output.appendLine('');
+}
 
+async function initiateVscodeDebugger(csprojUri: vscode.Uri, profileName: string) {
+  const output = OutputChannelService.channel;
+
+  const csproj = new CsprojInstance(csprojUri);
+
+  await buildDotnetProject(csproj);
+
+  const debugConfig = await csproj.createVscodeDebugConfiguration({
+    profileName: profileName,
+    configurationName: constants.DOTNET_START_CONFIGURATION_NAME,
+  });
+  if (!debugConfig) {
+    return undefined;
+  }
 
   output.appendLine('');
   output.appendLine('Resolved debug configuration:');
@@ -129,7 +137,7 @@ async function runAltF5Picker(manager: DotnetStartManager): Promise<void> {
   }
 }
 
-async function buildDotnetStartDebugConfiguration(
+async function resolveVscodeDebugConfiguration(
   manager: DotnetStartManager,
 ): Promise<vscode.DebugConfiguration | undefined> {
   const { csprojUri, profileName } = await manager.ensureSelectedProjectAndProfile() ?? {};
@@ -137,7 +145,10 @@ async function buildDotnetStartDebugConfiguration(
     return undefined;
   }
   const csproj = new CsprojInstance(csprojUri);
-  return csproj.buildCoreclrDotnetStartConfiguration({
+
+  await buildDotnetProject(csproj);
+
+  return csproj.createVscodeDebugConfiguration({
     profileName: profileName,
     configurationName: constants.DOTNET_START_CONFIGURATION_NAME,
   });
@@ -167,13 +178,11 @@ export function createDotnetStartDebugConfigurationProvider(
         return debugConfiguration;
       }
 
-      const built = await buildDotnetStartDebugConfiguration(manager);
-      if (!built) {
+      const debugConfig = await resolveVscodeDebugConfiguration(manager);
+      if (!debugConfig) {
         return undefined;
       }
-
-      void folder;
-      return built.debugConfig;
+      return debugConfig;
     },
   };
 }
