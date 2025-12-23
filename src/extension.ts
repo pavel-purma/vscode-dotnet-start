@@ -8,6 +8,8 @@ const STATE_KEY_CSPROJ = 'dotnet-start.selected-csproj-uri';
 const STATE_KEY_LAUNCH_PROFILE = 'dotnet-start.selected-launch-profile';
 export const DOTNET_START_CONFIGURATION_NAME = 'dotnet-start';
 
+const DOTNET_START_RESOLVED_FLAG = '__dotnetStartResolved';
+
 const csprojService = new CsprojService();
 
 type F5ActionId = 'dotnet-start' | 'dotnet-start.run-once-profile';
@@ -291,6 +293,12 @@ function buildCoreclrDotnetStartStubConfiguration(): vscode.DebugConfiguration {
   };
 }
 
+function markDotnetStartResolved<T extends vscode.DebugConfiguration>(config: T): T {
+  // VS Code will re-invoke resolveDebugConfiguration even for configurations passed to startDebugging.
+  // Mark generated configs so our resolver can avoid re-building and causing duplicate dotnet builds.
+  return { ...config, [DOTNET_START_RESOLVED_FLAG]: true };
+}
+
 function getWsFolderForProject(csprojUri: vscode.Uri): vscode.WorkspaceFolder | undefined {
   return getWorkspaceFolderForUri(csprojUri) ?? getAnyWorkspaceFolder();
 }
@@ -386,11 +394,13 @@ async function buildDotnetStartDebugConfiguration(
     return undefined;
   }
 
+  const resolvedDebugConfig = markDotnetStartResolved(debugConfig);
+
   output.appendLine('');
   output.appendLine('Resolved debug configuration:');
-  output.appendLine(safeJsonStringify(debugConfig));
+  output.appendLine(safeJsonStringify(resolvedDebugConfig));
 
-  return { wsFolder, debugConfig };
+  return { wsFolder, debugConfig: resolvedDebugConfig };
 }
 
 async function startDotnetDebugging(
@@ -512,6 +522,13 @@ export function createDotnetStartDebugConfigurationProvider(
     },
     resolveDebugConfiguration: async (folder, debugConfiguration) => {
       if (debugConfiguration?.name !== DOTNET_START_CONFIGURATION_NAME) {
+        return debugConfiguration;
+      }
+
+      const alreadyResolved =
+        Boolean(debugConfiguration && typeof debugConfiguration === 'object') &&
+        Boolean((debugConfiguration as Record<string, unknown>)[DOTNET_START_RESOLVED_FLAG]);
+      if (alreadyResolved) {
         return debugConfiguration;
       }
 
