@@ -53,7 +53,7 @@
         "keybindings": [
             {
                 "command": "dotnetStart.start",
-                "key": "ctrl+alt+f5",
+                "key": "alt+f5",
                 "when": "!inDebugMode"
             }
         ]
