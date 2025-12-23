@@ -2,9 +2,9 @@ import * as assert from 'assert';
 import * as path from 'path';
 import * as vscode from 'vscode';
 
+import * as constants from '../shared/constants';
 import {
-  createDotnetStartDebugConfigurationProvider,
-  DOTNET_START_CONFIGURATION_NAME,
+  createDotnetStartDebugConfigurationProvider
 } from '../extension';
 import { CsprojService } from '../services/csprojService';
 
@@ -587,7 +587,7 @@ suite('dotnet-start extension', () => {
       assert.ok(infoCalls >= 1, 'Expected an informational message after the update.');
 
       const configs = store.configurations ?? [];
-      const dotnetStart = configs.find((c) => c.name === DOTNET_START_CONFIGURATION_NAME);
+      const dotnetStart = configs.find((c) => c.name === constants.DOTNET_START_CONFIGURATION_NAME);
       assert.ok(dotnetStart, 'Expected dotnet-start configuration to be present.');
       assert.strictEqual(dotnetStart?.type, 'coreclr');
       assert.strictEqual(dotnetStart?.request, 'launch');
@@ -611,7 +611,7 @@ suite('dotnet-start extension', () => {
     const configs = await provider.provideDebugConfigurations(undefined);
     assert.ok(Array.isArray(configs), 'Expected an array of debug configurations.');
 
-    const dotnetStart = configs.find((c) => c?.name === DOTNET_START_CONFIGURATION_NAME);
+    const dotnetStart = configs.find((c) => c?.name === constants.DOTNET_START_CONFIGURATION_NAME);
     assert.ok(dotnetStart, 'Expected a debug configuration named dotnet-start.');
     assert.strictEqual(dotnetStart.type, 'coreclr');
     assert.strictEqual(dotnetStart.request, 'launch');

@@ -470,4 +470,29 @@ export class CsprojService {
       return { ok: false, message, stdout, stderr };
     }
   }
+
+  /**
+   * Runs `dotnet build` for the given project and pipes output to the shared dotnet-start output channel.
+   * Returns `true` when the build succeeds.
+   */
+  public async runDotnetBuildAndPipeOutput(csprojUri: vscode.Uri): Promise<boolean> {
+    const output = OutputChannelService.channel;
+    output.clear();
+    output.appendLine(`dotnet build ${this.toWorkspaceRelative(csprojUri)} -c Debug -v minimal`);
+    output.appendLine('');
+    output.show(true);
+
+    const result = await this.runDotnetBuild(csprojUri, {
+      onStdoutLine: (line) => output.appendLine(line),
+      onStderrLine: (line) => output.appendLine(line),
+    });
+
+    if (!result.ok) {
+      output.appendLine('');
+      output.appendLine(`dotnet build failed: ${result.message}`);
+      return false;
+    }
+
+    return true;
+  }
 }
