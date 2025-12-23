@@ -23,10 +23,10 @@ export type MsbuildProjectProperties = {
  * Fetches and parses MSBuild project properties using `dotnet msbuild -getProperty:*`.
  */
 export class MsbuildProjectPropertiesService {
-  public async tryGetProjectProperties(
+  public async getMsbuildProjectProperties(
     csprojUri: vscode.Uri,
     options: { configuration: 'Debug' | 'Release' },
-  ): Promise<MsbuildProjectProperties | undefined> {
+  ): Promise<MsbuildProjectProperties> {
     const projectDir = path.dirname(csprojUri.fsPath);
 
     const propertyNames: readonly (keyof MsbuildProjectProperties)[] = [
@@ -57,99 +57,32 @@ export class MsbuildProjectPropertiesService {
       });
       // Assume dotnet/msbuild emits JSON on stdout; stderr can contain non-JSON warnings.
       const parsedAll = this.parseMsbuildProperties(stdout);
-      const parsed = this.pickProperties(parsedAll, propertyNames) as MsbuildProjectProperties;
-      const hasAny = propertyNames.some((p) => {
-        const v = parsed[String(p) as keyof MsbuildProjectProperties];
-        return typeof v === 'string' && v.trim().length > 0;
-      });
-      if (hasAny) {
-        return parsed;
+      if (!parsedAll || Object.keys(parsedAll).length === 0) {
+        throw new Error('MSBuild properties JSON does not contain any properties.');
       }
-
-      // Fallback: some MSBuild versions or hosts don't emit parseable output for -getProperty.
-      // Import a tiny temporary targets file that prints properties in a stable `Name = Value` format.
-      const fallback = await this.tryGetProjectPropertiesViaTargetsImport(csprojUri, options, propertyNames);
-      return fallback;
+      const parsed: MsbuildProjectProperties = {
+        TargetPath: this.trimOrUndefined(parsedAll.TargetPath),
+        TargetFramework: this.trimOrUndefined(parsedAll.TargetFramework),
+        TargetFrameworks: this.trimOrUndefined(parsedAll.TargetFrameworks),
+        OutputPath: this.trimOrUndefined(parsedAll.OutputPath),
+        BaseOutputPath: this.trimOrUndefined(parsedAll.BaseOutputPath),
+        AssemblyName: this.trimOrUndefined(parsedAll.AssemblyName),
+        TargetExt: this.trimOrUndefined(parsedAll.TargetExt),
+        TargetFileName: this.trimOrUndefined(parsedAll.TargetFileName),
+        AppendTargetFrameworkToOutputPath: this.trimOrUndefined(parsedAll.AppendTargetFrameworkToOutputPath),
+      };
+      return parsed;
     } catch {
-      return undefined;
+      throw new Error('Failed to retrieve MSBuild project properties via dotnet msbuild.');
     }
   }
 
-  private async tryGetProjectPropertiesViaTargetsImport(
-    csprojUri: vscode.Uri,
-    options: { configuration: 'Debug' | 'Release' },
-    propertyNames: readonly (keyof MsbuildProjectProperties)[],
-  ): Promise<MsbuildProjectProperties | undefined> {
-    const projectDir = path.dirname(csprojUri.fsPath);
-    const tempDir = await fs.mkdtemp(path.join(os.tmpdir(), 'dotnet-start-msbuild-'));
-    const targetsPath = path.join(tempDir, 'dotnet-start.props.targets');
-
-    const lines = propertyNames
-      .map((p) => {
-        const name = String(p);
-        return `    <Message Importance="High" Text="${name} = $(${name})" />`;
-      })
-      .join('\n');
-
-    const targetsContents = [
-      '<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">',
-      '  <Target Name="DotnetStart_PrintProperties">',
-      lines,
-      '  </Target>',
-      '</Project>',
-      '',
-    ].join('\n');
-
-    try {
-      await fs.writeFile(targetsPath, targetsContents, { encoding: 'utf8' });
-
-      const args = [
-        'msbuild',
-        csprojUri.fsPath,
-        '-nologo',
-        '-verbosity:minimal',
-        '-target:DotnetStart_PrintProperties',
-        `-property:Configuration=${options.configuration}`,
-        `-property:CustomAfterMicrosoftCommonTargets=${targetsPath}`,
-      ];
-
-      const { stdout, stderr } = await execFileAsync('dotnet', args, {
-        cwd: projectDir,
-        windowsHide: true,
-        timeout: 30_000,
-        maxBuffer: 10 * 1024 * 1024,
-      });
-
-      const parsedAll = this.parseMsbuildProperties(stdout);
-      const parsed = this.pickProperties(parsedAll, propertyNames) as MsbuildProjectProperties;
-      const hasAny = propertyNames.some((p) => {
-        const v = parsed[String(p) as keyof MsbuildProjectProperties];
-        return typeof v === 'string' && v.trim().length > 0;
-      });
-      return hasAny ? parsed : undefined;
-    } catch {
+  private trimOrUndefined(value: string | undefined): string | undefined {
+    if (typeof value !== 'string') {
       return undefined;
-    } finally {
-      try {
-        await fs.rm(tempDir, { recursive: true, force: true });
-      } catch {
-        // ignore cleanup failures
-      }
     }
-  }
-
-  private pickProperties(
-    allProperties: Record<string, string | undefined>,
-    names: readonly string[],
-  ): Record<string, string | undefined> {
-    const picked: Record<string, string | undefined> = {};
-    for (const name of names) {
-      const v = allProperties[name];
-      if (typeof v === 'string' && v.trim().length > 0) {
-        picked[name] = v.trim();
-      }
-    }
-    return picked;
+    const trimmed = value.trim();
+    return trimmed.length > 0 ? trimmed : undefined;
   }
 
   public computeExpectedTargetPath(
@@ -214,7 +147,7 @@ export class MsbuildProjectPropertiesService {
     return undefined;
   }
 
-  public parseMsbuildProperties(output: string): Record<string, string | undefined> {
+  private parseMsbuildProperties(output: string): Record<string, string | undefined> {
     const result: Record<string, string | undefined> = {};
     const trimmed = output.trim();
     if (trimmed.length === 0) {
@@ -233,8 +166,7 @@ export class MsbuildProjectPropertiesService {
           }
         }
       }
-      return result;
     }
-    throw new Error('MSBuild properties JSON does not contain a valid "Properties" object.');
+    return result;
   }
 }

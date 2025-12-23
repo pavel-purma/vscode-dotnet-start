@@ -40,33 +40,6 @@ export class CsprojService {
     }
   }
 
-  private pickProperties(
-    allProperties: Record<string, string | undefined>,
-    names: readonly string[],
-  ): Record<string, string | undefined> {
-    const picked: Record<string, string | undefined> = {};
-    for (const name of names) {
-      const v = allProperties[name];
-      if (typeof v === 'string' && v.trim().length > 0) {
-        picked[name] = v.trim();
-      }
-    }
-    return picked;
-  }
-
-  public parseMsbuildProperties(output: string, names: readonly string[]): Record<string, string | undefined> {
-    const all = this.msbuild.parseMsbuildProperties(output);
-    return this.pickProperties(all, names);
-  }
-
-  private computeExpectedTargetPathFromMsbuildProperties(
-    csprojUri: vscode.Uri,
-    configuration: 'Debug' | 'Release',
-    props: Record<string, string | undefined>,
-  ): string | undefined {
-    return this.msbuild.computeExpectedTargetPath(csprojUri, configuration, props as MsbuildProjectProperties);
-  }
-
   public async getLaunchSettingsUriForProject(csprojUri: vscode.Uri): Promise<vscode.Uri | undefined> {
     const projectDir = path.dirname(csprojUri.fsPath);
     const candidates = [
@@ -345,7 +318,7 @@ export class CsprojService {
     const projectDir = path.dirname(csprojUri.fsPath);
     const projectName = path.parse(csprojUri.fsPath).name;
 
-    const props: MsbuildProjectProperties | undefined = await this.msbuild.tryGetProjectProperties(csprojUri, {
+    const props: MsbuildProjectProperties | undefined = await this.msbuild.getMsbuildProjectProperties(csprojUri, {
       configuration: 'Debug',
     });
     if (props) {
@@ -383,7 +356,7 @@ export class CsprojService {
     };
   }
 
-  public async runDotnetBuild(
+  private async runDotnetBuild(
     csprojUri: vscode.Uri,
     options?: {
       onStdoutLine?: (line: string) => void;
