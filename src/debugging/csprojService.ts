@@ -1,6 +1,7 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 import * as childProcess from 'child_process';
+import * as readline from 'readline';
 import { promisify } from 'util';
 
 import {
@@ -370,6 +371,12 @@ export class CsprojService {
 
   public async runDotnetBuild(
     csprojUri: vscode.Uri,
+    options?: {
+      onStdoutLine?: (line: string) => void;
+      onStderrLine?: (line: string) => void;
+      timeoutMs?: number;
+      cancellationToken?: vscode.CancellationToken;
+    },
   ): Promise<{ ok: true; stdout: string; stderr: string } | { ok: false; message: string; stdout: string; stderr: string }> {
     const skipBuild =
       process.env.DOTNET_START_SKIP_DOTNET_BUILD === '1' ||
@@ -384,17 +391,77 @@ export class CsprojService {
 
     const projectDir = path.dirname(csprojUri.fsPath);
     try {
-      const execFileAsync = promisify(childProcess.execFile);
-      const result = await execFileAsync('dotnet', ['build', csprojUri.fsPath, '-c', 'Debug', '-v', 'minimal'], {
+      const timeoutMs = options?.timeoutMs ?? 120_000;
+      const args = ['build', csprojUri.fsPath, '-c', 'Debug', '-v', 'minimal'];
+
+      const child = childProcess.spawn('dotnet', args, {
         cwd: projectDir,
         windowsHide: true,
-        timeout: 120_000,
-        maxBuffer: 50 * 1024 * 1024,
+        stdio: ['ignore', 'pipe', 'pipe'],
       });
 
-      const stdout = typeof result.stdout === 'string' ? result.stdout : String(result.stdout ?? '');
-      const stderr = typeof result.stderr === 'string' ? result.stderr : String(result.stderr ?? '');
-      return { ok: true, stdout, stderr };
+      let stdout = '';
+      let stderr = '';
+      let killedByTimeout = false;
+
+      const kill = () => {
+        try {
+          child.kill();
+        } catch {
+          // ignore
+        }
+      };
+
+      const timeoutHandle = setTimeout(() => {
+        killedByTimeout = true;
+        kill();
+      }, timeoutMs);
+
+      const cancellationDisposable = options?.cancellationToken?.onCancellationRequested(() => {
+        kill();
+      });
+
+      const stdoutStream = child.stdout;
+      const stderrStream = child.stderr;
+
+      const stdoutRl = stdoutStream
+        ? readline.createInterface({ input: stdoutStream, crlfDelay: Infinity })
+        : undefined;
+      const stderrRl = stderrStream
+        ? readline.createInterface({ input: stderrStream, crlfDelay: Infinity })
+        : undefined;
+
+      stdoutRl?.on('line', (line) => {
+        stdout += `${line}\n`;
+        options?.onStdoutLine?.(line);
+      });
+      stderrRl?.on('line', (line) => {
+        stderr += `${line}\n`;
+        options?.onStderrLine?.(line);
+      });
+
+      const result = await new Promise<{ code: number | null; signal: NodeJS.Signals | null }>((resolve, reject) => {
+        child.on('error', (err) => reject(err));
+        child.on('close', (code, signal) => resolve({ code, signal }));
+      });
+
+      clearTimeout(timeoutHandle);
+      cancellationDisposable?.dispose();
+      stdoutRl?.close();
+      stderrRl?.close();
+
+      const ok = result.code === 0;
+      if (ok) {
+        return { ok: true, stdout, stderr };
+      }
+
+      const reason = killedByTimeout
+        ? `timed out after ${timeoutMs}ms`
+        : result.signal
+          ? `terminated by signal ${result.signal}`
+          : `exited with code ${String(result.code)}`;
+
+      return { ok: false, message: reason, stdout, stderr };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
       const stdout =

@@ -51,9 +51,10 @@ async function runDotnetBuildAndPipeOutput(
   output.appendLine('');
   output.show(true);
 
-  const result = await csprojService.runDotnetBuild(csprojUri);
-  appendNonEmpty(output, result.stdout);
-  appendNonEmpty(output, result.stderr);
+  const result = await csprojService.runDotnetBuild(csprojUri, {
+    onStdoutLine: (line) => output.appendLine(line),
+    onStderrLine: (line) => output.appendLine(line),
+  });
 
   if (!result.ok) {
     output.appendLine('');

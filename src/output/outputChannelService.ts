@@ -28,4 +28,8 @@ export class OutputChannelService {
   public static appendLine(text: string): void {
     this.channel.appendLine(text);
   }
+
+  public static append(text: string): void {
+    this.channel.append(text);
+  }
 }
