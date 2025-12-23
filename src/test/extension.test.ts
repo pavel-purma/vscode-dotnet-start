@@ -72,6 +72,10 @@ suite('dotnet-start extension', () => {
         2,
       ),
     );
+
+    // Create a fake build output so tests don't require a real `dotnet build`.
+    const dllUri = vscode.Uri.joinPath(fixtureRoot, 'App', 'bin', 'Debug', 'net8.0', 'App.dll');
+    await writeTextFile(dllUri, '');
   });
 
   teardown(async () => {
@@ -84,7 +88,7 @@ suite('dotnet-start extension', () => {
     }
   });
 
-  test('dotnetStart.start starts coreclr debugging with dotnet run args', async function () {
+  test('dotnetStart.start starts coreclr debugging by launching the built DLL', async function () {
     this.timeout(10_000);
     const originalShowQuickPick = vscode.window.showQuickPick;
     const originalCreateQuickPick = vscode.window.createQuickPick;
@@ -195,7 +199,8 @@ suite('dotnet-start extension', () => {
       assert.strictEqual(capturedConfig.console, 'integratedTerminal');
       assert.strictEqual(capturedConfig.cwd, path.dirname(csprojUri.fsPath));
 
-      assert.deepStrictEqual(capturedConfig.args, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Dev']);
+      const expectedDllPath = path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll');
+      assert.deepStrictEqual(capturedConfig.args, [expectedDllPath]);
     } finally {
       (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
       (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = originalCreateQuickPick as unknown;
@@ -288,7 +293,8 @@ suite('dotnet-start extension', () => {
 
       assert.ok(sawOneOffProfileTitle, 'Expected the one-off profile QuickPick title to be used.');
       assert.ok(capturedConfig, 'Expected a debug configuration passed to startDebugging.');
-      assert.deepStrictEqual(capturedConfig.args, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Dev']);
+      const expectedDllPath = path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll');
+      assert.deepStrictEqual(capturedConfig.args, [expectedDllPath]);
     } finally {
       (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
       (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = originalCreateQuickPick as unknown;
@@ -627,6 +633,9 @@ suite('dotnet-start extension', () => {
       ),
     );
 
+    const secondDllUri = vscode.Uri.joinPath(fixtureRoot, 'App2', 'bin', 'Debug', 'net8.0', 'App2.dll');
+    await writeTextFile(secondDllUri, '');
+
     let phase: 'initial' | 'afterProjectChange' = 'initial';
     let sawProfilePickerAfterProjectChange = false;
 
@@ -711,7 +720,10 @@ suite('dotnet-start extension', () => {
       // First run: select App + Dev (saved).
       phase = 'initial';
       await vscode.commands.executeCommand('dotnetStart.start');
-      assert.deepStrictEqual(capturedArgs, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Dev']);
+      assert.deepStrictEqual(
+        capturedArgs,
+        [path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll')],
+      );
 
       // Change project selection to App2; this should clear the saved profile.
       phase = 'afterProjectChange';
@@ -722,7 +734,10 @@ suite('dotnet-start extension', () => {
       await vscode.commands.executeCommand('dotnetStart.start');
 
       assert.ok(sawProfilePickerAfterProjectChange, 'Expected the launch profile picker to appear after changing the project.');
-      assert.deepStrictEqual(capturedArgs, ['run', '--project', secondCsprojUri.fsPath, '--launch-profile', 'Prod']);
+      assert.deepStrictEqual(
+        capturedArgs,
+        [path.join(path.dirname(secondCsprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App2.dll')],
+      );
     } finally {
       (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
       (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = originalCreateQuickPick as unknown;
@@ -829,13 +844,13 @@ suite('dotnet-start extension', () => {
       // First run: should prompt only for csproj, auto-select the sole profile.
       await vscode.commands.executeCommand('dotnetStart.start');
       assert.strictEqual(showQuickPickCalls, 1, 'Expected only the csproj QuickPick prompt on first run.');
-      assert.deepStrictEqual(capturedArgs, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Only']);
+      assert.deepStrictEqual(capturedArgs, [path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll')]);
 
       // Second run: should prompt for nothing (state persisted).
       showQuickPickCalls = 0;
       await vscode.commands.executeCommand('dotnetStart.start');
       assert.strictEqual(showQuickPickCalls, 0, 'Expected no prompts on subsequent run when state is saved.');
-      assert.deepStrictEqual(capturedArgs, ['run', '--project', csprojUri.fsPath, '--launch-profile', 'Only']);
+      assert.deepStrictEqual(capturedArgs, [path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll')]);
     } finally {
       (vscode.window as unknown as { showQuickPick: unknown }).showQuickPick = originalShowQuickPick as unknown;
       (vscode.window as unknown as { createQuickPick: unknown }).createQuickPick = originalCreateQuickPick as unknown;

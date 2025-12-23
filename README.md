@@ -43,7 +43,7 @@ Optional: you can also add a `dotnet-start` entry to your workspace’s `launch.
 Notes:
 
 - Launch profiles are read from `Properties/launchSettings.json` next to the selected `.csproj`.
-- Debugging uses `dotnet run --project <csproj> --launch-profile <profile>` under the hood.
+- Debugging launches the built output (`dotnet <path-to-binary>`) and applies `launchSettings.json` env/args from the selected profile. This avoids common breakpoint issues with `dotnet run`.
 - VS Code’s `F5` behavior depends on which debug configuration is currently selected. After you pick **dotnet-start** once, it should remain selected in that window; if VS Code asks you to pick a configuration again, just pick **dotnet-start**.
 - The extension delegates to your installed .NET debugger (`coreclr`) via `vscode.debug.startDebugging(...)`.
 
