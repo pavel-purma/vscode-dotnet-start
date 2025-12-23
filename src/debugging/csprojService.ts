@@ -316,12 +316,12 @@ export class CsprojService {
       'AppendTargetFrameworkToOutputPath',
     ];
 
-    const parts = keys.map((k) => {
+    this.log('MSBuild properties:');
+    for (const k of keys) {
       const v = props[k];
-      return `${String(k)}=${typeof v === 'string' && v.trim().length > 0 ? v : '<unset>'}`;
-    });
-
-    this.log(`MSBuild properties: ${parts.join(', ')}`);
+      const value = typeof v === 'string' && v.trim().length > 0 ? v : '<unset>';
+      this.log(`  ${String(k)} = ${value}`);
+    }
   }
 
   private async resolveTargetBinaryPath(
