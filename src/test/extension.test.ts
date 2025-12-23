@@ -6,10 +6,10 @@ import * as constants from '../shared/constants';
 import {
   createDotnetStartDebugConfigurationProvider
 } from '../extension';
-import { CsprojService } from '../services/csprojService';
 import {
   MsbuildProjectPropertiesService,
 } from '../services/msbuildProjectPropertiesService';
+import { DotnetStartManager } from '../services/dotnetStartManager';
 
 type AnyQuickPickItem = vscode.QuickPickItem & Record<string, unknown>;
 
@@ -482,7 +482,9 @@ suite('dotnet-start extension', () => {
       },
     } as unknown as vscode.ExtensionContext;
 
-    const provider = createDotnetStartDebugConfigurationProvider(fakeContext);
+    const manager = new DotnetStartManager(fakeContext.workspaceState);
+
+    const provider = createDotnetStartDebugConfigurationProvider(manager);
     assert.ok(provider.provideDebugConfigurations, 'Expected provider.provideDebugConfigurations to be defined.');
 
     const configs = await provider.provideDebugConfigurations(undefined);

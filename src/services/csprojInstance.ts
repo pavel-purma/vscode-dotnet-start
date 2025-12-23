@@ -25,14 +25,21 @@ type LaunchProfileDetails = {
  * - Resolving the output binary path (TargetPath / fallback search)
  * - Constructing the final VS Code debug configuration
  */
-export class CsprojService {
-  private readonly msbuild = new MsbuildProjectPropertiesService();
+export class CsprojInstance {
+
+  constructor(csprojUri: vscode.Uri) {
+    this.csprojUri = csprojUri;
+  }
+
+  private csprojUri: vscode.Uri;
+
+  private static readonly msbuild = new MsbuildProjectPropertiesService();
 
   private log(message: string): void {
     OutputChannelService.appendLine(`[dotnet-start] ${message}`);
   }
 
-  private toWorkspaceRelative(uri: vscode.Uri): string {
+  private static toWorkspaceRelative(uri: vscode.Uri): string {
     try {
       return vscode.workspace.asRelativePath(uri, false).replaceAll('\\', '/');
     } catch {
@@ -40,19 +47,19 @@ export class CsprojService {
     }
   }
 
-  public async getLaunchSettingsUriForProject(csprojUri: vscode.Uri): Promise<vscode.Uri | undefined> {
-    const projectDir = path.dirname(csprojUri.fsPath);
+  public async getLaunchSettingsUriForProject(): Promise<vscode.Uri | undefined> {
+    const projectDir = path.dirname(this.csprojUri.fsPath);
     const candidates = [
       vscode.Uri.file(path.join(projectDir, 'Properties', 'launchSettings.json')),
       vscode.Uri.file(path.join(projectDir, 'launchSettings.json')),
     ];
 
-    this.log(`Searching launchSettings.json for ${this.toWorkspaceRelative(csprojUri)}.`);
+    this.log(`Searching launchSettings.json for ${CsprojInstance.toWorkspaceRelative(this.csprojUri)}.`);
 
     for (const candidate of candidates) {
       try {
         await vscode.workspace.fs.stat(candidate);
-        this.log(`Found launchSettings.json at ${this.toWorkspaceRelative(candidate)}.`);
+        this.log(`Found launchSettings.json at ${CsprojInstance.toWorkspaceRelative(candidate)}.`);
         return candidate;
       } catch {
         // ignore
@@ -64,7 +71,7 @@ export class CsprojService {
   }
 
   public async readLaunchProfileNames(launchSettingsUri: vscode.Uri): Promise<string[]> {
-    this.log(`Reading launch profiles from ${this.toWorkspaceRelative(launchSettingsUri)}.`);
+    this.log(`Reading launch profiles from ${CsprojInstance.toWorkspaceRelative(launchSettingsUri)}.`);
     const bytes = await vscode.workspace.fs.readFile(launchSettingsUri);
     const text = Buffer.from(bytes).toString('utf8');
     const json = JSON.parse(text) as unknown;
@@ -85,19 +92,18 @@ export class CsprojService {
   }
 
   public async buildCoreclrDotnetStartConfiguration(options: {
-    csprojUri: vscode.Uri;
     profileName: string;
     configurationName: string;
   }): Promise<vscode.DebugConfiguration | undefined> {
-    const { csprojUri, profileName, configurationName } = options;
-    const projectDir = path.dirname(csprojUri.fsPath);
+    const { profileName, configurationName } = options;
+    const projectDir = path.dirname(this.csprojUri.fsPath);
 
-    this.log(`Building debug configuration "${configurationName}" for ${this.toWorkspaceRelative(csprojUri)} (profile: ${profileName}).`);
+    this.log(`Building debug configuration "${configurationName}" for ${CsprojInstance.toWorkspaceRelative(this.csprojUri)} (profile: ${profileName}).`);
 
-    const launchSettingsUri = await this.getLaunchSettingsUriForProject(csprojUri);
+    const launchSettingsUri = await this.getLaunchSettingsUriForProject();
     if (!launchSettingsUri) {
       void vscode.window.showErrorMessage(
-        `No launchSettings.json found for ${path.basename(csprojUri.fsPath)} (expected Properties/launchSettings.json).`,
+        `No launchSettings.json found for ${path.basename(this.csprojUri.fsPath)} (expected Properties/launchSettings.json).`,
       );
       return undefined;
     }
@@ -124,8 +130,8 @@ export class CsprojService {
 
     this.log('Resolving target binary path (Debug).');
 
-    let resolved = await this.resolveTargetBinaryPath(csprojUri);
-    this.log(`Resolved binary: ${this.toWorkspaceRelative(resolved.binaryUri)} (source: ${resolved.source}).`);
+    let resolved = await this.resolveTargetBinaryPath(this.csprojUri);
+    this.log(`Resolved binary: ${CsprojInstance.toWorkspaceRelative(resolved.binaryUri)} (source: ${resolved.source}).`);
     if (!(await this.fileExists(resolved.binaryUri))) {
       void vscode.window.showErrorMessage(
         `Build output was not found at ${resolved.binaryUri.fsPath}. (resolved via ${resolved.source})`,
@@ -267,7 +273,7 @@ export class CsprojService {
     const preferredPattern = new vscode.RelativePattern(base, `bin/Debug/**/${projectName}.dll`);
     const preferred = await vscode.workspace.findFiles(preferredPattern, '**/{obj,node_modules,.git,.vs}/**', 2);
     if (preferred.length > 0) {
-      this.log(`Fallback search hit (preferred): ${this.toWorkspaceRelative(preferred[0])}.`);
+      this.log(`Fallback search hit (preferred): ${CsprojInstance.toWorkspaceRelative(preferred[0])}.`);
       return preferred[0];
     }
 
@@ -275,7 +281,7 @@ export class CsprojService {
     const anyDebug = await vscode.workspace.findFiles(anyDebugDllPattern, '**/{obj,node_modules,.git,.vs}/**', 20);
     if (anyDebug.length > 0) {
       const exact = anyDebug.find((u) => path.basename(u.fsPath).toLowerCase() === `${projectName.toLowerCase()}.dll`);
-      this.log(`Fallback search hit (bin/Debug/**/*.dll): ${this.toWorkspaceRelative((exact ?? anyDebug[0])!)}.`);
+      this.log(`Fallback search hit (bin/Debug/**/*.dll): ${CsprojInstance.toWorkspaceRelative((exact ?? anyDebug[0])!)}.`);
       return exact ?? anyDebug[0];
     }
 
@@ -283,7 +289,7 @@ export class CsprojService {
     const anyDll = await vscode.workspace.findFiles(anyDllPattern, '**/{obj,node_modules,.git,.vs}/**', 50);
     if (anyDll.length > 0) {
       const exact = anyDll.find((u) => path.basename(u.fsPath).toLowerCase() === `${projectName.toLowerCase()}.dll`);
-      this.log(`Fallback search hit (any dll): ${this.toWorkspaceRelative((exact ?? anyDll[0])!)}.`);
+      this.log(`Fallback search hit (any dll): ${CsprojInstance.toWorkspaceRelative((exact ?? anyDll[0])!)}.`);
       return exact ?? anyDll[0];
     }
 
@@ -320,7 +326,7 @@ export class CsprojService {
 
     let props: MsbuildProjectProperties | undefined;
     try {
-      props = await this.msbuild.getMsbuildProjectProperties(csprojUri, {
+      props = await CsprojInstance.msbuild.getMsbuildProjectProperties(csprojUri, {
         configuration: 'Debug',
       });
     } catch (e) {
@@ -339,7 +345,7 @@ export class CsprojService {
         return { binaryUri: vscode.Uri.file(absolute), source: 'msbuild' };
       }
 
-      const computed = this.msbuild.computeExpectedTargetPath(csprojUri, 'Debug', props);
+      const computed = CsprojInstance.msbuild.computeExpectedTargetPath(csprojUri, 'Debug', props);
       if (computed) {
         this.log(`Computed expected target path from MSBuild properties: ${computed}.`);
         return { binaryUri: vscode.Uri.file(computed), source: 'msbuild' };
@@ -363,7 +369,6 @@ export class CsprojService {
   }
 
   private async runDotnetBuild(
-    csprojUri: vscode.Uri,
     options?: {
       onStdoutLine?: (line: string) => void;
       onStderrLine?: (line: string) => void;
@@ -382,10 +387,10 @@ export class CsprojService {
       };
     }
 
-    const projectDir = path.dirname(csprojUri.fsPath);
+    const projectDir = path.dirname(this.csprojUri.fsPath);
     try {
       const timeoutMs = options?.timeoutMs ?? 120_000;
-      const args = ['build', csprojUri.fsPath, '-c', 'Debug', '-v', 'minimal'];
+      const args = ['build', this.csprojUri.fsPath, '-c', 'Debug', '-v', 'minimal'];
 
       const child = childProcess.spawn('dotnet', args, {
         cwd: projectDir,
@@ -469,14 +474,14 @@ export class CsprojService {
    * Runs `dotnet build` for the given project and pipes output to the shared dotnet-start output channel.
    * Returns `true` when the build succeeds.
    */
-  public async runDotnetBuildAndPipeOutput(csprojUri: vscode.Uri): Promise<boolean> {
+  public async runDotnetBuildAndPipeOutput(): Promise<boolean> {
     const output = OutputChannelService.channel;
     output.clear();
-    output.appendLine(`dotnet build ${this.toWorkspaceRelative(csprojUri)} -c Debug -v minimal`);
+    output.appendLine(`dotnet build ${CsprojInstance.toWorkspaceRelative(this.csprojUri)} -c Debug -v minimal`);
     output.appendLine('');
     output.show(true);
 
-    const result = await this.runDotnetBuild(csprojUri, {
+    const result = await this.runDotnetBuild({
       onStdoutLine: (line) => output.appendLine(line),
       onStderrLine: (line) => output.appendLine(line),
     });

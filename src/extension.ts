@@ -1,5 +1,5 @@
 import * as vscode from 'vscode';
-import { CsprojService } from './services/csprojService';
+import { CsprojInstance } from './services/csprojInstance';
 import { DotnetStartManager } from './services/dotnetStartManager';
 import { OutputChannelService } from './services/outputChannelService';
 import * as constants from './shared/constants';
@@ -7,8 +7,6 @@ import {
   hasDotnetStartLaunchConfiguration,
   safeJsonStringify,
 } from './shared/utils';
-
-const csprojService = new CsprojService();
 
 function getDotnetStartConfiguration(): vscode.DebugConfiguration {
   return {
@@ -76,7 +74,8 @@ async function buildDotnetStartDebugConfiguration(
     return undefined;
   }
 
-  const buildOk = await csprojService.runDotnetBuildAndPipeOutput(csprojUri);
+  const csprojService = new CsprojInstance(csprojUri);
+  const buildOk = await csprojService.runDotnetBuildAndPipeOutput();
   if (!buildOk) {
     output.appendLine('');
     output.appendLine('Build status: FAILED');
@@ -90,7 +89,6 @@ async function buildDotnetStartDebugConfiguration(
   output.appendLine('Build status: SUCCEEDED');
 
   const debugConfig = await csprojService.buildCoreclrDotnetStartConfiguration({
-    csprojUri,
     profileName: profile,
     configurationName: constants.DOTNET_START_CONFIGURATION_NAME,
   });
@@ -124,7 +122,7 @@ async function startDotnetDebugging(
 }
 
 async function startDotnetDebuggingWithOneOffProfile(
-  manager: DotnetStartManager,
+  manager: DotnetStartManager
 ): Promise<void> {
   const csprojUri = await manager.ensureSelectedProject();
   if (!csprojUri) {
@@ -142,7 +140,8 @@ async function startDotnetDebuggingWithOneOffProfile(
     return;
   }
 
-  const buildOk = await csprojService.runDotnetBuildAndPipeOutput(csprojUri);
+  const csprojService = new CsprojInstance(csprojUri);
+  const buildOk = await csprojService.runDotnetBuildAndPipeOutput();
   if (!buildOk) {
     void vscode.window.showErrorMessage(
       'dotnet build failed. See Output → dotnet-start for details.',
@@ -151,7 +150,6 @@ async function startDotnetDebuggingWithOneOffProfile(
   }
 
   const debugConfig = await csprojService.buildCoreclrDotnetStartConfiguration({
-    csprojUri,
     profileName: profile,
     configurationName: constants.DOTNET_START_CONFIGURATION_NAME,
   });
@@ -167,8 +165,7 @@ async function startDotnetDebuggingWithOneOffProfile(
   }
 }
 
-async function runF5Picker(context: vscode.ExtensionContext): Promise<void> {
-  const manager = new DotnetStartManager(context.workspaceState, csprojService);
+async function runF5Picker(manager: DotnetStartManager): Promise<void> {
   const action = await manager.pickStartAction({
     configurationName: constants.DOTNET_START_CONFIGURATION_NAME,
   });
@@ -187,9 +184,8 @@ async function runF5Picker(context: vscode.ExtensionContext): Promise<void> {
 }
 
 export function createDotnetStartDebugConfigurationProvider(
-  context: vscode.ExtensionContext,
+  manager: DotnetStartManager,
 ): vscode.DebugConfigurationProvider {
-  const manager = new DotnetStartManager(context.workspaceState, csprojService);
   return {
     provideDebugConfigurations: async () => {
       // Name must match the UX requirement: show "dotnet-start" in the native picker.
@@ -239,9 +235,9 @@ function createDotnetStartInitialDebugConfigurationProvider(): vscode.DebugConfi
 export function activate(context: vscode.ExtensionContext) {
   OutputChannelService.initialize(context);
 
-  const manager = new DotnetStartManager(context.workspaceState, csprojService);
+  const manager = new DotnetStartManager(context.workspaceState);
 
-  const provider = createDotnetStartDebugConfigurationProvider(context);
+  const provider = createDotnetStartDebugConfigurationProvider(manager);
   const initialProvider = createDotnetStartInitialDebugConfigurationProvider();
 
   // Provide a dynamic configuration so it shows up in the native F5 picker.
@@ -281,7 +277,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('dotnetStart.start', async () => {
-      await runF5Picker(context);
+      await runF5Picker(manager);
     })
   );
 
