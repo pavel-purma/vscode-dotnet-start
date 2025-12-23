@@ -14,10 +14,38 @@ type Mutable<T> = { -readonly [K in keyof T]: T[K] };
 
 function patchProp<T extends object, K extends keyof T>(target: T, key: K, value: T[K]): () => void {
   const mutable = target as unknown as Mutable<T>;
-  const original = mutable[key];
-  mutable[key] = value;
+  const originalDescriptor = Object.getOwnPropertyDescriptor(target, key);
+  const hadOwnDescriptor = Boolean(originalDescriptor);
+  const originalValue = mutable[key];
+
+  try {
+    mutable[key] = value;
+  } catch {
+    Object.defineProperty(target, key, {
+      configurable: true,
+      enumerable: originalDescriptor?.enumerable ?? true,
+      writable: true,
+      value,
+    });
+  }
+
   return () => {
-    mutable[key] = original;
+    if (hadOwnDescriptor && originalDescriptor) {
+      Object.defineProperty(target, key, originalDescriptor);
+      return;
+    }
+
+    try {
+      delete (target as Record<string, unknown>)[key as unknown as string];
+    } catch {
+      // ignore
+    }
+
+    try {
+      (mutable as Record<string, unknown>)[key as unknown as string] = originalValue as unknown;
+    } catch {
+      // ignore
+    }
   };
 }
 
@@ -45,8 +73,12 @@ suite('dotnet-start extension', () => {
   let fixtureRoot: vscode.Uri;
   let csprojUri: vscode.Uri;
   let launchSettingsUri: vscode.Uri;
+  let previousSkipBuildEnv: string | undefined;
 
   setup(async () => {
+    previousSkipBuildEnv = process.env.DOTNET_START_SKIP_DOTNET_BUILD;
+    process.env.DOTNET_START_SKIP_DOTNET_BUILD = '1';
+
     const wsFolder = getWorkspaceRoot();
     fixtureRoot = vscode.Uri.joinPath(wsFolder.uri, 'out', 'test-fixtures', 'dotnet-start');
     await ensureEmptyDir(fixtureRoot);
@@ -91,6 +123,11 @@ suite('dotnet-start extension', () => {
   });
 
   teardown(async () => {
+    if (previousSkipBuildEnv === undefined) {
+      delete process.env.DOTNET_START_SKIP_DOTNET_BUILD;
+    } else {
+      process.env.DOTNET_START_SKIP_DOTNET_BUILD = previousSkipBuildEnv;
+    }
     if (fixtureRoot) {
       try {
         await vscode.workspace.fs.delete(fixtureRoot, { recursive: true, useTrash: false });
@@ -461,7 +498,18 @@ suite('dotnet-start extension', () => {
       },
     } as unknown as vscode.ExtensionContext;
 
-    const provider = createDotnetStartDebugConfigurationProvider(fakeContext);
+    const fakeOutputChannel = {
+      name: 'dotnet-start',
+      append: () => undefined,
+      appendLine: () => undefined,
+      clear: () => undefined,
+      replace: () => undefined,
+      show: () => undefined,
+      hide: () => undefined,
+      dispose: () => undefined,
+    } as unknown as vscode.OutputChannel;
+
+    const provider = createDotnetStartDebugConfigurationProvider(fakeContext, fakeOutputChannel);
     assert.ok(provider.provideDebugConfigurations, 'Expected provider.provideDebugConfigurations to be defined.');
 
     const configs = await provider.provideDebugConfigurations(undefined);

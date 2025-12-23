@@ -1,14 +1,12 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
-import { execFile } from 'child_process';
+import * as childProcess from 'child_process';
 import { promisify } from 'util';
 
 import {
   MsbuildProjectProperties,
   MsbuildProjectPropertiesService,
 } from './msbuildProjectPropertiesService';
-
-const execFileAsync = promisify(execFile);
 
 type LaunchProfileDetails = {
   commandName?: string;
@@ -115,21 +113,10 @@ export class CsprojService {
 
     let resolved = await this.resolveTargetBinaryPath(csprojUri);
     if (!(await this.fileExists(resolved.binaryUri))) {
-      const buildResult = await this.tryDotnetBuild(csprojUri);
-      if (!buildResult.ok) {
-        void vscode.window.showErrorMessage(
-          `dotnet build failed. Ensure .NET SDK is installed and "dotnet" is on PATH. ${buildResult.message}`,
-        );
-        return undefined;
-      }
-
-      resolved = await this.resolveTargetBinaryPath(csprojUri);
-      if (!(await this.fileExists(resolved.binaryUri))) {
-        void vscode.window.showErrorMessage(
-          `Build succeeded but output was not found at ${resolved.binaryUri.fsPath}. (resolved via ${resolved.source})`,
-        );
-        return undefined;
-      }
+      void vscode.window.showErrorMessage(
+        `Build output was not found at ${resolved.binaryUri.fsPath}. (resolved via ${resolved.source})`,
+      );
+      return undefined;
     }
 
     const env = { ...(details.environmentVariables ?? {}) };
@@ -305,18 +292,40 @@ export class CsprojService {
     return { binaryUri: vscode.Uri.file(csprojUri.fsPath), source: 'fallback-search' };
   }
 
-  private async tryDotnetBuild(csprojUri: vscode.Uri): Promise<{ ok: true } | { ok: false; message: string }> {
+  public async runDotnetBuild(
+    csprojUri: vscode.Uri,
+  ): Promise<{ ok: true; stdout: string; stderr: string } | { ok: false; message: string; stdout: string; stderr: string }> {
+    const skipBuild =
+      process.env.DOTNET_START_SKIP_DOTNET_BUILD === '1' ||
+      process.env.DOTNET_START_SKIP_DOTNET_BUILD?.toLowerCase() === 'true';
+    if (skipBuild) {
+      return {
+        ok: true,
+        stdout: 'dotnet build skipped (DOTNET_START_SKIP_DOTNET_BUILD is set).',
+        stderr: '',
+      };
+    }
+
     const projectDir = path.dirname(csprojUri.fsPath);
     try {
-      await execFileAsync('dotnet', ['build', csprojUri.fsPath, '-c', 'Debug', '-v', 'minimal'], {
+      const execFileAsync = promisify(childProcess.execFile);
+      const result = await execFileAsync('dotnet', ['build', csprojUri.fsPath, '-c', 'Debug', '-v', 'minimal'], {
         cwd: projectDir,
         windowsHide: true,
         timeout: 120_000,
+        maxBuffer: 50 * 1024 * 1024,
       });
-      return { ok: true };
+
+      const stdout = typeof result.stdout === 'string' ? result.stdout : String(result.stdout ?? '');
+      const stderr = typeof result.stderr === 'string' ? result.stderr : String(result.stderr ?? '');
+      return { ok: true, stdout, stderr };
     } catch (e) {
       const message = e instanceof Error ? e.message : String(e);
-      return { ok: false, message };
+      const stdout =
+        typeof (e as { stdout?: unknown }).stdout === 'string' ? (e as { stdout?: string }).stdout ?? '' : '';
+      const stderr =
+        typeof (e as { stderr?: unknown }).stderr === 'string' ? (e as { stderr?: string }).stderr ?? '' : '';
+      return { ok: false, message, stdout, stderr };
     }
   }
 }

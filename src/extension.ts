@@ -15,6 +15,37 @@ type F5PickItem = vscode.QuickPickItem & { action: F5ActionId };
 type CsprojPickItem = vscode.QuickPickItem & { uri: vscode.Uri };
 type ProfilePickItem = vscode.QuickPickItem & { profileName: string };
 
+function appendNonEmpty(output: vscode.OutputChannel, text: string): void {
+  const normalized = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+  const trimmed = normalized.trimEnd();
+  if (trimmed.length === 0) {
+    return;
+  }
+  output.appendLine(trimmed);
+}
+
+async function runDotnetBuildAndPipeOutput(
+  output: vscode.OutputChannel,
+  csprojUri: vscode.Uri,
+): Promise<boolean> {
+  output.clear();
+  output.appendLine(`dotnet build ${toWorkspaceRelativeDetail(csprojUri)} -c Debug -v minimal`);
+  output.appendLine('');
+  output.show(true);
+
+  const result = await csprojService.runDotnetBuild(csprojUri);
+  appendNonEmpty(output, result.stdout);
+  appendNonEmpty(output, result.stderr);
+
+  if (!result.ok) {
+    output.appendLine('');
+    output.appendLine(`dotnet build failed: ${result.message}`);
+    return false;
+  }
+
+  return true;
+}
+
 async function showPreselectedQuickPick<T extends vscode.QuickPickItem>(
   items: readonly T[],
   activeItem: T,
@@ -290,6 +321,7 @@ async function pickLaunchProfileOnce(csprojUri: vscode.Uri): Promise<string | un
 
 async function buildDotnetStartDebugConfiguration(
   context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
 ): Promise<{ wsFolder: vscode.WorkspaceFolder; debugConfig: vscode.DebugConfiguration } | undefined> {
   let csprojUri = await getSelectedCsproj(context);
   if (!csprojUri) {
@@ -313,6 +345,14 @@ async function buildDotnetStartDebugConfiguration(
     return undefined;
   }
 
+  const buildOk = await runDotnetBuildAndPipeOutput(output, csprojUri);
+  if (!buildOk) {
+    void vscode.window.showErrorMessage(
+      'dotnet build failed. See Output → dotnet-start for details.',
+    );
+    return undefined;
+  }
+
   const debugConfig = await csprojService.buildCoreclrDotnetStartConfiguration({
     csprojUri,
     profileName: profile,
@@ -325,8 +365,11 @@ async function buildDotnetStartDebugConfiguration(
   return { wsFolder, debugConfig };
 }
 
-async function startDotnetDebugging(context: vscode.ExtensionContext): Promise<void> {
-  const built = await buildDotnetStartDebugConfiguration(context);
+async function startDotnetDebugging(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+): Promise<void> {
+  const built = await buildDotnetStartDebugConfiguration(context, output);
   if (!built) {
     return;
   }
@@ -339,7 +382,10 @@ async function startDotnetDebugging(context: vscode.ExtensionContext): Promise<v
   }
 }
 
-async function startDotnetDebuggingWithOneOffProfile(context: vscode.ExtensionContext): Promise<void> {
+async function startDotnetDebuggingWithOneOffProfile(
+  context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
+): Promise<void> {
   let csprojUri = await getSelectedCsproj(context);
   if (!csprojUri) {
     csprojUri = await pickCsproj(context);
@@ -356,6 +402,14 @@ async function startDotnetDebuggingWithOneOffProfile(context: vscode.ExtensionCo
   const wsFolder = getWsFolderForProject(csprojUri);
   if (!wsFolder) {
     void vscode.window.showErrorMessage('No workspace folder is open.');
+    return;
+  }
+
+  const buildOk = await runDotnetBuildAndPipeOutput(output, csprojUri);
+  if (!buildOk) {
+    void vscode.window.showErrorMessage(
+      'dotnet build failed. See Output → dotnet-start for details.',
+    );
     return;
   }
 
@@ -376,7 +430,7 @@ async function startDotnetDebuggingWithOneOffProfile(context: vscode.ExtensionCo
   }
 }
 
-async function runF5Picker(context: vscode.ExtensionContext): Promise<void> {
+async function runF5Picker(context: vscode.ExtensionContext, output: vscode.OutputChannel): Promise<void> {
   const selectedCsproj = await getSelectedCsproj(context);
   const selectedProfile = await getSelectedLaunchProfile(context);
 
@@ -411,17 +465,18 @@ async function runF5Picker(context: vscode.ExtensionContext): Promise<void> {
   }
 
   if (picked.action === DOTNET_START_CONFIGURATION_NAME) {
-    await startDotnetDebugging(context);
+    await startDotnetDebugging(context, output);
     return;
   }
 
   if (picked.action === 'dotnet-start.run-once-profile') {
-    await startDotnetDebuggingWithOneOffProfile(context);
+    await startDotnetDebuggingWithOneOffProfile(context, output);
   }
 }
 
 export function createDotnetStartDebugConfigurationProvider(
   context: vscode.ExtensionContext,
+  output: vscode.OutputChannel,
 ): vscode.DebugConfigurationProvider {
   return {
     provideDebugConfigurations: async () => {
@@ -433,7 +488,7 @@ export function createDotnetStartDebugConfigurationProvider(
         return debugConfiguration;
       }
 
-      const built = await buildDotnetStartDebugConfiguration(context);
+      const built = await buildDotnetStartDebugConfiguration(context, output);
       if (!built) {
         return undefined;
       }
@@ -459,7 +514,10 @@ function createDotnetStartInitialDebugConfigurationProvider(): vscode.DebugConfi
 }
 
 export function activate(context: vscode.ExtensionContext) {
-  const provider = createDotnetStartDebugConfigurationProvider(context);
+  const output = vscode.window.createOutputChannel('dotnet-start');
+  context.subscriptions.push(output);
+
+  const provider = createDotnetStartDebugConfigurationProvider(context, output);
   const initialProvider = createDotnetStartInitialDebugConfigurationProvider();
 
   // Provide a dynamic configuration so it shows up in the native F5 picker.
@@ -499,7 +557,7 @@ export function activate(context: vscode.ExtensionContext) {
 
   context.subscriptions.push(
     vscode.commands.registerCommand('dotnetStart.start', async () => {
-      await runF5Picker(context);
+      await runF5Picker(context, output);
     }),
   );
 
