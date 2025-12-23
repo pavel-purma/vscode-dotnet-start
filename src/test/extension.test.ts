@@ -6,7 +6,7 @@ import {
   createDotnetStartDebugConfigurationProvider,
   DOTNET_START_CONFIGURATION_NAME,
 } from '../extension';
-import { DotnetStartDebugService } from '../debugging/dotnetStartDebugService';
+import { CsprojService } from '../debugging/csprojService';
 
 type AnyQuickPickItem = vscode.QuickPickItem & Record<string, unknown>;
 
@@ -120,37 +120,37 @@ suite('dotnet-start extension', () => {
         (() => {
           actionPickerCalls++;
 
-        let onDidAcceptHandler: (() => void) | undefined;
-        let onDidHideHandler: (() => void) | undefined;
+          let onDidAcceptHandler: (() => void) | undefined;
+          let onDidHideHandler: (() => void) | undefined;
 
-        const quickPick = {
-          items: [] as AnyQuickPickItem[],
-          activeItems: [] as AnyQuickPickItem[],
-          selectedItems: [] as AnyQuickPickItem[],
-          title: undefined as unknown,
-          placeholder: undefined as unknown,
-          onDidAccept: (cb: () => void) => {
-            onDidAcceptHandler = cb;
-            return { dispose: () => undefined };
-          },
-          onDidHide: (cb: () => void) => {
-            onDidHideHandler = cb;
-            return { dispose: () => undefined };
-          },
-          onDidDispose: (_cb: () => void) => {
-            return { dispose: () => undefined };
-          },
-          show: () => {
-            // VS Code's QuickPick behavior varies: sometimes selection is read from `activeItems`.
-            // Set both to keep the command handler deterministic.
-            const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
-            quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
-            quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
-            onDidAcceptHandler?.();
-            onDidHideHandler?.();
-          },
-          dispose: () => undefined,
-        };
+          const quickPick = {
+            items: [] as AnyQuickPickItem[],
+            activeItems: [] as AnyQuickPickItem[],
+            selectedItems: [] as AnyQuickPickItem[],
+            title: undefined as unknown,
+            placeholder: undefined as unknown,
+            onDidAccept: (cb: () => void) => {
+              onDidAcceptHandler = cb;
+              return { dispose: () => undefined };
+            },
+            onDidHide: (cb: () => void) => {
+              onDidHideHandler = cb;
+              return { dispose: () => undefined };
+            },
+            onDidDispose: (_cb: () => void) => {
+              return { dispose: () => undefined };
+            },
+            show: () => {
+              // VS Code's QuickPick behavior varies: sometimes selection is read from `activeItems`.
+              // Set both to keep the command handler deterministic.
+              const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
+              quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+              quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+              onDidAcceptHandler?.();
+              onDidHideHandler?.();
+            },
+            dispose: () => undefined,
+          };
 
           return quickPick as unknown;
         }) as unknown as typeof vscode.window.createQuickPick,
@@ -163,21 +163,21 @@ suite('dotnet-start extension', () => {
           quickPickCalls++;
           assert.ok(items.length > 0, 'Expected QuickPick items.');
 
-        const first = items[0];
-        if (typeof first === 'object' && first && 'uri' in first) {
-          const match = items.find((i) =>
-            typeof i === 'object' &&
-            i &&
-            'uri' in i &&
-            (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath,
-          );
-          return (match ?? first) as unknown;
-        }
+          const first = items[0];
+          if (typeof first === 'object' && first && 'uri' in first) {
+            const match = items.find((i) =>
+              typeof i === 'object' &&
+              i &&
+              'uri' in i &&
+              (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath,
+            );
+            return (match ?? first) as unknown;
+          }
 
-        if (typeof first === 'object' && first && 'profileName' in first) {
-          const match = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
-          return (match ?? first) as unknown;
-        }
+          if (typeof first === 'object' && first && 'profileName' in first) {
+            const match = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
+            return (match ?? first) as unknown;
+          }
 
           return first as unknown;
         }) as unknown as typeof vscode.window.showQuickPick,
@@ -248,32 +248,32 @@ suite('dotnet-start extension', () => {
           let onDidAcceptHandler: (() => void) | undefined;
           let onDidHideHandler: (() => void) | undefined;
 
-        const quickPick = {
-          items: [] as AnyQuickPickItem[],
-          activeItems: [] as AnyQuickPickItem[],
-          selectedItems: [] as AnyQuickPickItem[],
-          title: undefined as unknown,
-          placeholder: undefined as unknown,
-          onDidAccept: (cb: () => void) => {
-            onDidAcceptHandler = cb;
-            return { dispose: () => undefined };
-          },
-          onDidHide: (cb: () => void) => {
-            onDidHideHandler = cb;
-            return { dispose: () => undefined };
-          },
-          onDidDispose: (_cb: () => void) => {
-            return { dispose: () => undefined };
-          },
-          show: () => {
-            // Simulate the user moving the highlight to the second action,
-            // but with selectedItems remaining empty (real VS Code can behave this way).
-            quickPick.activeItems = [quickPick.items[1] ?? quickPick.items[0]].filter(Boolean) as AnyQuickPickItem[];
-            onDidAcceptHandler?.();
-            onDidHideHandler?.();
-          },
-          dispose: () => undefined,
-        };
+          const quickPick = {
+            items: [] as AnyQuickPickItem[],
+            activeItems: [] as AnyQuickPickItem[],
+            selectedItems: [] as AnyQuickPickItem[],
+            title: undefined as unknown,
+            placeholder: undefined as unknown,
+            onDidAccept: (cb: () => void) => {
+              onDidAcceptHandler = cb;
+              return { dispose: () => undefined };
+            },
+            onDidHide: (cb: () => void) => {
+              onDidHideHandler = cb;
+              return { dispose: () => undefined };
+            },
+            onDidDispose: (_cb: () => void) => {
+              return { dispose: () => undefined };
+            },
+            show: () => {
+              // Simulate the user moving the highlight to the second action,
+              // but with selectedItems remaining empty (real VS Code can behave this way).
+              quickPick.activeItems = [quickPick.items[1] ?? quickPick.items[0]].filter(Boolean) as AnyQuickPickItem[];
+              onDidAcceptHandler?.();
+              onDidHideHandler?.();
+            },
+            dispose: () => undefined,
+          };
 
           return quickPick as unknown;
         }) as unknown as typeof vscode.window.createQuickPick,
@@ -285,24 +285,24 @@ suite('dotnet-start extension', () => {
         (async (items: readonly AnyQuickPickItem[], options?: vscode.QuickPickOptions) => {
           assert.ok(items.length > 0, 'Expected QuickPick items.');
 
-        const first = items[0];
-        if (typeof first === 'object' && first && 'uri' in first) {
-          const match = items.find((i) =>
-            typeof i === 'object' &&
-            i &&
-            'uri' in i &&
-            (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath,
-          );
-          return (match ?? first) as unknown;
-        }
-
-        if (typeof first === 'object' && first && 'profileName' in first) {
-          if (options?.title?.includes('(once)')) {
-            sawOneOffProfileTitle = true;
+          const first = items[0];
+          if (typeof first === 'object' && first && 'uri' in first) {
+            const match = items.find((i) =>
+              typeof i === 'object' &&
+              i &&
+              'uri' in i &&
+              (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath,
+            );
+            return (match ?? first) as unknown;
           }
-          const match = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
-          return (match ?? first) as unknown;
-        }
+
+          if (typeof first === 'object' && first && 'profileName' in first) {
+            if (options?.title?.includes('(once)')) {
+              sawOneOffProfileTitle = true;
+            }
+            const match = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
+            return (match ?? first) as unknown;
+          }
 
           return first as unknown;
         }) as unknown as typeof vscode.window.showQuickPick,
@@ -331,10 +331,10 @@ suite('dotnet-start extension', () => {
   });
 
   test('msbuild properties: computes expected TargetPath when TargetPath is missing', () => {
-    const service = new DotnetStartDebugService();
+    const csprojService = new CsprojService();
     const csproj = vscode.Uri.file(path.join('C:', 'repo', 'App', 'App.csproj'));
 
-    const computed = (service as unknown as {
+    const computed = (csprojService as unknown as {
       computeExpectedTargetPathFromMsbuildProperties: (
         csprojUri: vscode.Uri,
         configuration: 'Debug' | 'Release',
@@ -353,7 +353,7 @@ suite('dotnet-start extension', () => {
   });
 
   test('msbuild properties: parses multiple values from a single msbuild output blob', () => {
-    const service = new DotnetStartDebugService();
+    const csprojService = new CsprojService();
     const output = [
       'TargetFramework = net8.0',
       'TargetFrameworks = net8.0;net9.0',
@@ -363,7 +363,7 @@ suite('dotnet-start extension', () => {
       'AppendTargetFrameworkToOutputPath = true',
     ].join('\n');
 
-    const props = (service as unknown as {
+    const props = (csprojService as unknown as {
       parseMsbuildProperties: (output: string, names: readonly string[]) => Record<string, string | undefined>;
     }).parseMsbuildProperties(output, [
       'TargetFramework',
@@ -521,23 +521,23 @@ suite('dotnet-start extension', () => {
         vscode.window,
         'showQuickPick',
         (async (items: readonly AnyQuickPickItem[], _options?: vscode.QuickPickOptions) => {
-        callIndex++;
+          callIndex++;
 
-        const csprojItems = items.filter((i) => typeof i === 'object' && i && 'uri' in i) as Array<
-          AnyQuickPickItem & { uri: vscode.Uri; description?: string }
-        >;
-        assert.ok(csprojItems.length > 0, 'Expected .csproj QuickPick items.');
+          const csprojItems = items.filter((i) => typeof i === 'object' && i && 'uri' in i) as Array<
+            AnyQuickPickItem & { uri: vscode.Uri; description?: string }
+          >;
+          assert.ok(csprojItems.length > 0, 'Expected .csproj QuickPick items.');
 
-        const target = csprojItems.find((i) => i.uri.fsPath === csprojUri.fsPath);
-        assert.ok(target, 'Expected the fixture csproj to appear in QuickPick items.');
+          const target = csprojItems.find((i) => i.uri.fsPath === csprojUri.fsPath);
+          assert.ok(target, 'Expected the fixture csproj to appear in QuickPick items.');
 
-        if (callIndex === 2) {
-          secondCallSawCurrentLabel = target.description === 'Current';
-          secondCallCurrentIsFirstItem = csprojItems[0]?.uri.fsPath === csprojUri.fsPath;
-        }
+          if (callIndex === 2) {
+            secondCallSawCurrentLabel = target.description === 'Current';
+            secondCallCurrentIsFirstItem = csprojItems[0]?.uri.fsPath === csprojUri.fsPath;
+          }
 
-        // Always pick the fixture csproj.
-        return target as unknown;
+          // Always pick the fixture csproj.
+          return target as unknown;
         }) as unknown as typeof vscode.window.showQuickPick,
       );
 
@@ -605,37 +605,37 @@ suite('dotnet-start extension', () => {
         vscode.window,
         'createQuickPick',
         (() => {
-        let onDidAcceptHandler: (() => void) | undefined;
-        let onDidHideHandler: (() => void) | undefined;
+          let onDidAcceptHandler: (() => void) | undefined;
+          let onDidHideHandler: (() => void) | undefined;
 
-        const quickPick = {
-          items: [] as AnyQuickPickItem[],
-          activeItems: [] as AnyQuickPickItem[],
-          selectedItems: [] as AnyQuickPickItem[],
-          title: undefined as unknown,
-          placeholder: undefined as unknown,
-          onDidAccept: (cb: () => void) => {
-            onDidAcceptHandler = cb;
-            return { dispose: () => undefined };
-          },
-          onDidHide: (cb: () => void) => {
-            onDidHideHandler = cb;
-            return { dispose: () => undefined };
-          },
-          onDidDispose: (_cb: () => void) => {
-            return { dispose: () => undefined };
-          },
-          show: () => {
-            const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
-            quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
-            quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
-            onDidAcceptHandler?.();
-            onDidHideHandler?.();
-          },
-          dispose: () => undefined,
-        };
+          const quickPick = {
+            items: [] as AnyQuickPickItem[],
+            activeItems: [] as AnyQuickPickItem[],
+            selectedItems: [] as AnyQuickPickItem[],
+            title: undefined as unknown,
+            placeholder: undefined as unknown,
+            onDidAccept: (cb: () => void) => {
+              onDidAcceptHandler = cb;
+              return { dispose: () => undefined };
+            },
+            onDidHide: (cb: () => void) => {
+              onDidHideHandler = cb;
+              return { dispose: () => undefined };
+            },
+            onDidDispose: (_cb: () => void) => {
+              return { dispose: () => undefined };
+            },
+            show: () => {
+              const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
+              quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+              quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+              onDidAcceptHandler?.();
+              onDidHideHandler?.();
+            },
+            dispose: () => undefined,
+          };
 
-        return quickPick as unknown;
+          return quickPick as unknown;
         }) as unknown as typeof vscode.window.createQuickPick,
       );
 
@@ -643,26 +643,26 @@ suite('dotnet-start extension', () => {
         vscode.window,
         'showQuickPick',
         (async (items: readonly AnyQuickPickItem[], _options?: vscode.QuickPickOptions) => {
-        showQuickPickCalls++;
-        assert.ok(items.length > 0, 'Expected QuickPick items.');
+          showQuickPickCalls++;
+          assert.ok(items.length > 0, 'Expected QuickPick items.');
 
-        const first = items[0];
-        if (typeof first === 'object' && first && 'uri' in first) {
-          const match = items.find((i) =>
-            typeof i === 'object' &&
-            i &&
-            'uri' in i &&
-            (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath
-          );
-          return (match ?? first) as unknown;
-        }
+          const first = items[0];
+          if (typeof first === 'object' && first && 'uri' in first) {
+            const match = items.find((i) =>
+              typeof i === 'object' &&
+              i &&
+              'uri' in i &&
+              (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath
+            );
+            return (match ?? first) as unknown;
+          }
 
-        if (typeof first === 'object' && first && 'profileName' in first) {
-          const match = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
-          return (match ?? first) as unknown;
-        }
+          if (typeof first === 'object' && first && 'profileName' in first) {
+            const match = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
+            return (match ?? first) as unknown;
+          }
 
-        return first as unknown;
+          return first as unknown;
         }) as unknown as typeof vscode.window.showQuickPick,
       );
 
@@ -756,37 +756,37 @@ suite('dotnet-start extension', () => {
         vscode.window,
         'createQuickPick',
         (() => {
-        let onDidAcceptHandler: (() => void) | undefined;
-        let onDidHideHandler: (() => void) | undefined;
+          let onDidAcceptHandler: (() => void) | undefined;
+          let onDidHideHandler: (() => void) | undefined;
 
-        const quickPick = {
-          items: [] as AnyQuickPickItem[],
-          activeItems: [] as AnyQuickPickItem[],
-          selectedItems: [] as AnyQuickPickItem[],
-          title: undefined as unknown,
-          placeholder: undefined as unknown,
-          onDidAccept: (cb: () => void) => {
-            onDidAcceptHandler = cb;
-            return { dispose: () => undefined };
-          },
-          onDidHide: (cb: () => void) => {
-            onDidHideHandler = cb;
-            return { dispose: () => undefined };
-          },
-          onDidDispose: (_cb: () => void) => {
-            return { dispose: () => undefined };
-          },
-          show: () => {
-            const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
-            quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
-            quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
-            onDidAcceptHandler?.();
-            onDidHideHandler?.();
-          },
-          dispose: () => undefined,
-        };
+          const quickPick = {
+            items: [] as AnyQuickPickItem[],
+            activeItems: [] as AnyQuickPickItem[],
+            selectedItems: [] as AnyQuickPickItem[],
+            title: undefined as unknown,
+            placeholder: undefined as unknown,
+            onDidAccept: (cb: () => void) => {
+              onDidAcceptHandler = cb;
+              return { dispose: () => undefined };
+            },
+            onDidHide: (cb: () => void) => {
+              onDidHideHandler = cb;
+              return { dispose: () => undefined };
+            },
+            onDidDispose: (_cb: () => void) => {
+              return { dispose: () => undefined };
+            },
+            show: () => {
+              const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
+              quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+              quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+              onDidAcceptHandler?.();
+              onDidHideHandler?.();
+            },
+            dispose: () => undefined,
+          };
 
-        return quickPick as unknown;
+          return quickPick as unknown;
         }) as unknown as typeof vscode.window.createQuickPick,
       );
 
@@ -794,32 +794,32 @@ suite('dotnet-start extension', () => {
         vscode.window,
         'showQuickPick',
         (async (items: readonly AnyQuickPickItem[], _options?: vscode.QuickPickOptions) => {
-        assert.ok(items.length > 0, 'Expected QuickPick items.');
+          assert.ok(items.length > 0, 'Expected QuickPick items.');
 
-        const first = items[0];
-        if (typeof first === 'object' && first && 'uri' in first) {
-          const target = items.find(
-            (i) =>
-              typeof i === 'object' &&
-              i &&
-              'uri' in i &&
-              (i as unknown as { uri: vscode.Uri }).uri.fsPath ===
+          const first = items[0];
+          if (typeof first === 'object' && first && 'uri' in first) {
+            const target = items.find(
+              (i) =>
+                typeof i === 'object' &&
+                i &&
+                'uri' in i &&
+                (i as unknown as { uri: vscode.Uri }).uri.fsPath ===
                 (phase === 'initial' ? csprojUri.fsPath : secondCsprojUri.fsPath),
-          );
-          return (target ?? first) as unknown;
-        }
-
-        if (typeof first === 'object' && first && 'profileName' in first) {
-          if (phase === 'afterProjectChange') {
-            sawProfilePickerAfterProjectChange = true;
-            const prod = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Prod');
-            return (prod ?? first) as unknown;
+            );
+            return (target ?? first) as unknown;
           }
-          const dev = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
-          return (dev ?? first) as unknown;
-        }
 
-        return first as unknown;
+          if (typeof first === 'object' && first && 'profileName' in first) {
+            if (phase === 'afterProjectChange') {
+              sawProfilePickerAfterProjectChange = true;
+              const prod = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Prod');
+              return (prod ?? first) as unknown;
+            }
+            const dev = items.find((i) => typeof i === 'object' && i && 'profileName' in i && i.profileName === 'Dev');
+            return (dev ?? first) as unknown;
+          }
+
+          return first as unknown;
         }) as unknown as typeof vscode.window.showQuickPick,
       );
 
@@ -893,37 +893,37 @@ suite('dotnet-start extension', () => {
         vscode.window,
         'createQuickPick',
         (() => {
-        let onDidAcceptHandler: (() => void) | undefined;
-        let onDidHideHandler: (() => void) | undefined;
+          let onDidAcceptHandler: (() => void) | undefined;
+          let onDidHideHandler: (() => void) | undefined;
 
-        const quickPick = {
-          items: [] as AnyQuickPickItem[],
-          activeItems: [] as AnyQuickPickItem[],
-          selectedItems: [] as AnyQuickPickItem[],
-          title: undefined as unknown,
-          placeholder: undefined as unknown,
-          onDidAccept: (cb: () => void) => {
-            onDidAcceptHandler = cb;
-            return { dispose: () => undefined };
-          },
-          onDidHide: (cb: () => void) => {
-            onDidHideHandler = cb;
-            return { dispose: () => undefined };
-          },
-          onDidDispose: (_cb: () => void) => {
-            return { dispose: () => undefined };
-          },
-          show: () => {
-            const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
-            quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
-            quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
-            onDidAcceptHandler?.();
-            onDidHideHandler?.();
-          },
-          dispose: () => undefined,
-        };
+          const quickPick = {
+            items: [] as AnyQuickPickItem[],
+            activeItems: [] as AnyQuickPickItem[],
+            selectedItems: [] as AnyQuickPickItem[],
+            title: undefined as unknown,
+            placeholder: undefined as unknown,
+            onDidAccept: (cb: () => void) => {
+              onDidAcceptHandler = cb;
+              return { dispose: () => undefined };
+            },
+            onDidHide: (cb: () => void) => {
+              onDidHideHandler = cb;
+              return { dispose: () => undefined };
+            },
+            onDidDispose: (_cb: () => void) => {
+              return { dispose: () => undefined };
+            },
+            show: () => {
+              const firstItem = (quickPick.activeItems[0] ?? quickPick.items[0]) as AnyQuickPickItem | undefined;
+              quickPick.activeItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+              quickPick.selectedItems = [firstItem].filter(Boolean) as AnyQuickPickItem[];
+              onDidAcceptHandler?.();
+              onDidHideHandler?.();
+            },
+            dispose: () => undefined,
+          };
 
-        return quickPick as unknown;
+          return quickPick as unknown;
         }) as unknown as typeof vscode.window.createQuickPick,
       );
 
@@ -931,26 +931,26 @@ suite('dotnet-start extension', () => {
         vscode.window,
         'showQuickPick',
         (async (items: readonly AnyQuickPickItem[], _options?: vscode.QuickPickOptions) => {
-        showQuickPickCalls++;
-        assert.ok(items.length > 0, 'Expected QuickPick items.');
+          showQuickPickCalls++;
+          assert.ok(items.length > 0, 'Expected QuickPick items.');
 
-        const first = items[0];
-        if (typeof first === 'object' && first && 'uri' in first) {
-          const match = items.find(
-            (i) =>
-              typeof i === 'object' &&
-              i &&
-              'uri' in i &&
-              (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath,
-          );
-          return (match ?? first) as unknown;
-        }
+          const first = items[0];
+          if (typeof first === 'object' && first && 'uri' in first) {
+            const match = items.find(
+              (i) =>
+                typeof i === 'object' &&
+                i &&
+                'uri' in i &&
+                (i as unknown as { uri: vscode.Uri }).uri.fsPath === csprojUri.fsPath,
+            );
+            return (match ?? first) as unknown;
+          }
 
-        if (typeof first === 'object' && first && 'profileName' in first) {
-          assert.fail('Did not expect the profile QuickPick to be shown when only one profile exists.');
-        }
+          if (typeof first === 'object' && first && 'profileName' in first) {
+            assert.fail('Did not expect the profile QuickPick to be shown when only one profile exists.');
+          }
 
-        return first as unknown;
+          return first as unknown;
         }) as unknown as typeof vscode.window.showQuickPick,
       );
 

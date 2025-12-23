@@ -26,7 +26,7 @@ type LaunchProfileDetails = {
  * - Resolving the output binary path (TargetPath / fallback search)
  * - Constructing the final VS Code debug configuration
  */
-export class DotnetStartDebugService {
+export class CsprojService {
   private readonly msbuild = new MsbuildProjectPropertiesService();
 
   public async getLaunchSettingsUriForProject(csprojUri: vscode.Uri): Promise<vscode.Uri | undefined> {

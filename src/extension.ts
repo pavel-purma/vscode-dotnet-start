@@ -1,13 +1,13 @@
 import * as path from 'path';
 import * as vscode from 'vscode';
 
-import { DotnetStartDebugService } from './debugging/dotnetStartDebugService';
+import { CsprojService } from './debugging/csprojService';
 
 const STATE_KEY_CSPROJ = 'dotnet-start.selected-csproj-uri';
 const STATE_KEY_LAUNCH_PROFILE = 'dotnet-start.selected-launch-profile';
 export const DOTNET_START_CONFIGURATION_NAME = 'dotnet-start';
 
-const debugService = new DotnetStartDebugService();
+const csprojService = new CsprojService();
 
 type F5ActionId = 'dotnet-start' | 'dotnet-start.run-once-profile';
 type F5PickItem = vscode.QuickPickItem & { action: F5ActionId };
@@ -178,7 +178,7 @@ async function getSelectedCsproj(context: vscode.ExtensionContext): Promise<vsco
 
 
 async function pickLaunchProfile(context: vscode.ExtensionContext, csprojUri: vscode.Uri): Promise<string | undefined> {
-  const launchSettingsUri = await debugService.getLaunchSettingsUriForProject(csprojUri);
+  const launchSettingsUri = await csprojService.getLaunchSettingsUriForProject(csprojUri);
   if (!launchSettingsUri) {
     void vscode.window.showErrorMessage(
       `No launchSettings.json found for ${path.basename(csprojUri.fsPath)} (expected Properties/launchSettings.json).`,
@@ -188,7 +188,7 @@ async function pickLaunchProfile(context: vscode.ExtensionContext, csprojUri: vs
 
   let profileNames: string[];
   try {
-    profileNames = await debugService.readLaunchProfileNames(launchSettingsUri);
+    profileNames = await csprojService.readLaunchProfileNames(launchSettingsUri);
   } catch (e) {
     void vscode.window.showErrorMessage(`Failed to read launch profiles: ${String(e)}`);
     return undefined;
@@ -246,7 +246,7 @@ function getWsFolderForProject(csprojUri: vscode.Uri): vscode.WorkspaceFolder | 
 }
 
 async function pickLaunchProfileOnce(csprojUri: vscode.Uri): Promise<string | undefined> {
-  const launchSettingsUri = await debugService.getLaunchSettingsUriForProject(csprojUri);
+  const launchSettingsUri = await csprojService.getLaunchSettingsUriForProject(csprojUri);
   if (!launchSettingsUri) {
     void vscode.window.showErrorMessage(
       `No launchSettings.json found for ${path.basename(csprojUri.fsPath)} (expected Properties/launchSettings.json).`,
@@ -256,7 +256,7 @@ async function pickLaunchProfileOnce(csprojUri: vscode.Uri): Promise<string | un
 
   let profileNames: string[];
   try {
-    profileNames = await debugService.readLaunchProfileNames(launchSettingsUri);
+    profileNames = await csprojService.readLaunchProfileNames(launchSettingsUri);
   } catch (e) {
     void vscode.window.showErrorMessage(`Failed to read launch profiles: ${String(e)}`);
     return undefined;
@@ -313,7 +313,7 @@ async function buildDotnetStartDebugConfiguration(
     return undefined;
   }
 
-  const debugConfig = await debugService.buildCoreclrDotnetStartConfiguration({
+  const debugConfig = await csprojService.buildCoreclrDotnetStartConfiguration({
     csprojUri,
     profileName: profile,
     configurationName: DOTNET_START_CONFIGURATION_NAME,
@@ -359,7 +359,7 @@ async function startDotnetDebuggingWithOneOffProfile(context: vscode.ExtensionCo
     return;
   }
 
-  const debugConfig = await debugService.buildCoreclrDotnetStartConfiguration({
+  const debugConfig = await csprojService.buildCoreclrDotnetStartConfiguration({
     csprojUri,
     profileName: profile,
     configurationName: DOTNET_START_CONFIGURATION_NAME,
