@@ -91,8 +91,7 @@ export class MsbuildProjectPropertiesService {
 
     const targetFileName =
       (props.TargetFileName && props.TargetFileName.trim().length > 0 ? props.TargetFileName : undefined) ??
-      `${props.AssemblyName && props.AssemblyName.trim().length > 0 ? props.AssemblyName : projectName}${
-        props.TargetExt ?? '.dll'
+      `${props.AssemblyName && props.AssemblyName.trim().length > 0 ? props.AssemblyName : projectName}${props.TargetExt ?? '.dll'
       }`;
 
     return path.join(outputDir, targetFileName);
