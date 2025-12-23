@@ -40,11 +40,26 @@ export class CsprojService {
     }
   }
 
-  public parseMsbuildProperties(output: string, names: readonly string[]): Record<string, string | undefined> {
-    return this.msbuild.parseMsbuildProperties(output, names);
+  private pickProperties(
+    allProperties: Record<string, string | undefined>,
+    names: readonly string[],
+  ): Record<string, string | undefined> {
+    const picked: Record<string, string | undefined> = {};
+    for (const name of names) {
+      const v = allProperties[name];
+      if (typeof v === 'string' && v.trim().length > 0) {
+        picked[name] = v.trim();
+      }
+    }
+    return picked;
   }
 
-  public computeExpectedTargetPathFromMsbuildProperties(
+  public parseMsbuildProperties(output: string, names: readonly string[]): Record<string, string | undefined> {
+    const all = this.msbuild.parseMsbuildProperties(output);
+    return this.pickProperties(all, names);
+  }
+
+  private computeExpectedTargetPathFromMsbuildProperties(
     csprojUri: vscode.Uri,
     configuration: 'Debug' | 'Release',
     props: Record<string, string | undefined>,

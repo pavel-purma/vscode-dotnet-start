@@ -50,13 +50,14 @@ export class MsbuildProjectPropertiesService {
     ];
 
     try {
-      const { stdout, stderr } = await execFileAsync('dotnet', args, {
+      const { stdout } = await execFileAsync('dotnet', args, {
         cwd: projectDir,
         windowsHide: true,
         timeout: 15_000,
       });
-      const combined = `${stdout}\n${stderr}`;
-      const parsed = this.parseMsbuildProperties(combined, propertyNames) as MsbuildProjectProperties;
+      // Assume dotnet/msbuild emits JSON on stdout; stderr can contain non-JSON warnings.
+      const parsedAll = this.parseMsbuildProperties(stdout);
+      const parsed = this.pickProperties(parsedAll, propertyNames) as MsbuildProjectProperties;
       const hasAny = propertyNames.some((p) => {
         const v = parsed[String(p) as keyof MsbuildProjectProperties];
         return typeof v === 'string' && v.trim().length > 0;
@@ -119,8 +120,8 @@ export class MsbuildProjectPropertiesService {
         maxBuffer: 10 * 1024 * 1024,
       });
 
-      const combined = `${stdout}\n${stderr}`;
-      const parsed = this.parseMsbuildProperties(combined, propertyNames) as MsbuildProjectProperties;
+      const parsedAll = this.parseMsbuildProperties(stdout);
+      const parsed = this.pickProperties(parsedAll, propertyNames) as MsbuildProjectProperties;
       const hasAny = propertyNames.some((p) => {
         const v = parsed[String(p) as keyof MsbuildProjectProperties];
         return typeof v === 'string' && v.trim().length > 0;
@@ -135,6 +136,20 @@ export class MsbuildProjectPropertiesService {
         // ignore cleanup failures
       }
     }
+  }
+
+  private pickProperties(
+    allProperties: Record<string, string | undefined>,
+    names: readonly string[],
+  ): Record<string, string | undefined> {
+    const picked: Record<string, string | undefined> = {};
+    for (const name of names) {
+      const v = allProperties[name];
+      if (typeof v === 'string' && v.trim().length > 0) {
+        picked[name] = v.trim();
+      }
+    }
+    return picked;
   }
 
   public computeExpectedTargetPath(
@@ -154,7 +169,7 @@ export class MsbuildProjectPropertiesService {
 
     const outputPath = path.isAbsolute(outputPathRaw) ? outputPathRaw : path.join(projectDir, outputPathRaw);
 
-    const appendTfm = this.parseBooleanMsbuildProperty(props.AppendTargetFrameworkToOutputPath);
+    const appendTfm = this.convertMsbuildPropertyToBoolean(props.AppendTargetFrameworkToOutputPath);
     const shouldAppendTfm = tfm && (appendTfm ?? true);
 
     const normalizedOutputParts = path
@@ -184,76 +199,7 @@ export class MsbuildProjectPropertiesService {
       .filter((v) => v.length > 0);
   }
 
-  private parseMsbuildGetPropertyOutput(propertyName: string, output: string): string | undefined {
-    const text = output.replaceAll('\r\n', '\n');
-    const lines = text
-      .split('\n')
-      .map((l) => l.trim())
-      .filter((l) => l.length > 0);
-
-    const propertyLower = propertyName.toLowerCase();
-
-    const parseRemainder = (remainder: string): string | undefined => {
-      if (remainder.length === 0) {
-        return undefined;
-      }
-      const first = remainder[0];
-      const value = (first === '=' || first === ':') ? remainder.slice(1).trim() : remainder.trim();
-      return value.length > 0 ? value : undefined;
-    };
-
-    for (let i = 0; i < lines.length; i++) {
-      const line = lines[i]!;
-      const lower = line.toLowerCase();
-      if (!lower.startsWith(propertyLower)) {
-        continue;
-      }
-
-      // Avoid prefix collisions like TargetFramework vs TargetFrameworks.
-      const boundary = lower.slice(propertyLower.length, propertyLower.length + 1);
-      if (boundary.length > 0 && boundary !== ' ' && boundary !== '\t' && boundary !== '=' && boundary !== ':') {
-        continue;
-      }
-
-      // Trim the property name off and parse the remainder.
-      const remainder = line.slice(propertyName.length).trimStart();
-      const sameLine = parseRemainder(remainder);
-      if (sameLine !== undefined) {
-        return sameLine;
-      }
-
-      // Some MSBuild outputs (notably with -getProperty) print:
-      //   PropertyName:
-      //     value
-      // Handle the "value on next non-empty line" case.
-      // We only do this when the line looks like a property header (exact name, or name followed by ':' / '=').
-      const headerSuffix = remainder.trim();
-      const looksLikeHeader = headerSuffix.length === 0 || headerSuffix === ':' || headerSuffix === '=';
-      if (!looksLikeHeader) {
-        continue;
-      }
-
-      const next = lines[i + 1];
-      if (typeof next === 'string' && next.trim().length > 0) {
-        const value = next.trim();
-
-        // If the "value" looks like another property header (e.g. "OutputPath:"),
-        // treat this property as unset rather than mis-parsing the header as a value.
-        const looksLikeHeaderLine = /^[A-Za-z_][A-Za-z0-9_.]*\s*[:=]\s*$/.test(value);
-        if (!looksLikeHeaderLine && value.length > 0) {
-          return value;
-        }
-      }
-    }
-
-    if (lines.length === 1) {
-      return lines[0];
-    }
-
-    return undefined;
-  }
-
-  private parseBooleanMsbuildProperty(value: string | undefined): boolean | undefined {
+  private convertMsbuildPropertyToBoolean(value: string | undefined): boolean | undefined {
     if (!value) {
       return undefined;
     }
@@ -268,51 +214,18 @@ export class MsbuildProjectPropertiesService {
     return undefined;
   }
 
-  public parseMsbuildProperties(output: string, propertyNames: readonly (keyof MsbuildProjectProperties)[]): MsbuildProjectProperties;
-  public parseMsbuildProperties(output: string, propertyNames: readonly string[]): Record<string, string | undefined>;
-  public parseMsbuildProperties(output: string, propertyNames: readonly string[]): Record<string, string | undefined> {
-    const fromJson = this.tryParseMsbuildGetPropertyJson(output, propertyNames);
-    if (fromJson) {
-      return fromJson;
-    }
-
+  public parseMsbuildProperties(output: string): Record<string, string | undefined> {
     const result: Record<string, string | undefined> = {};
-    for (const name of propertyNames) {
-      const value = this.parseMsbuildGetPropertyOutput(String(name), output);
-      if (value !== undefined) {
-        result[String(name)] = value;
-      }
-    }
-    return result;
-  }
-
-  private tryParseMsbuildGetPropertyJson(
-    output: string,
-    propertyNames: readonly string[],
-  ): Record<string, string | undefined> | undefined {
     const trimmed = output.trim();
+    if (trimmed.length === 0) {
+      return result;
+    }
 
-    const tryParseObject = (text: string): Record<string, string | undefined> | undefined => {
-      let json: unknown;
-      try {
-        json = JSON.parse(text) as unknown;
-      } catch {
-        return undefined;
-      }
-
-      if (!json || typeof json !== 'object') {
-        return undefined;
-      }
-
-      const properties = (json as { Properties?: unknown }).Properties;
-      if (!properties || typeof properties !== 'object') {
-        return undefined;
-      }
-
+    const json = JSON.parse(trimmed) as unknown;
+    const properties = (json as { Properties?: unknown } | undefined)?.Properties;
+    if (properties && typeof properties === 'object') {
       const record = properties as Record<string, unknown>;
-      const result: Record<string, string | undefined> = {};
-      for (const name of propertyNames) {
-        const raw = record[name];
+      for (const [name, raw] of Object.entries(record)) {
         if (typeof raw === 'string') {
           const v = raw.trim();
           if (v.length > 0) {
@@ -320,25 +233,8 @@ export class MsbuildProjectPropertiesService {
           }
         }
       }
-      return Object.keys(result).length > 0 ? result : undefined;
-    };
-
-    // Newer dotnet/msbuild can return a clean JSON object.
-    if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
-      const parsed = tryParseObject(trimmed);
-      if (parsed) {
-        return parsed;
-      }
+      return result;
     }
-
-    // Some hosts may prepend/append non-JSON text; attempt to parse the outermost JSON block.
-    const firstBrace = trimmed.indexOf('{');
-    const lastBrace = trimmed.lastIndexOf('}');
-    if (firstBrace >= 0 && lastBrace > firstBrace) {
-      const candidate = trimmed.slice(firstBrace, lastBrace + 1);
-      return tryParseObject(candidate);
-    }
-
-    return undefined;
+    throw new Error('MSBuild properties JSON does not contain a valid "Properties" object.');
   }
 }

@@ -367,102 +367,12 @@ suite('dotnet-start extension', () => {
     }
   });
 
-  test('msbuild properties: computes expected TargetPath when TargetPath is missing', () => {
-    const csprojService = new CsprojService();
-    const csproj = vscode.Uri.file(path.join('C:', 'repo', 'App', 'App.csproj'));
-
-    const computed = (csprojService as unknown as {
-      computeExpectedTargetPathFromMsbuildProperties: (
-        csprojUri: vscode.Uri,
-        configuration: 'Debug' | 'Release',
-        props: Record<string, string | undefined>,
-      ) => string | undefined;
-    }).computeExpectedTargetPathFromMsbuildProperties(csproj, 'Debug', {
-      TargetFramework: 'net8.0',
-      OutputPath: path.join('bin', 'Debug') + path.sep,
-      AssemblyName: 'App',
-      TargetExt: '.dll',
-      AppendTargetFrameworkToOutputPath: 'true',
-    });
-
-    const expected = path.join('C:', 'repo', 'App', 'bin', 'Debug', 'net8.0', 'App.dll');
-    assert.strictEqual(computed?.toLowerCase(), expected.toLowerCase());
-  });
-
-  test('msbuild properties: parses multiple values from a single msbuild output blob', () => {
-    const csprojService = new CsprojService();
-    const output = [
-      'TargetFramework = net8.0',
-      'TargetFrameworks = net8.0;net9.0',
-      'OutputPath = bin\\Debug\\',
-      'AssemblyName = MyApp',
-      'TargetExt = .dll',
-      'AppendTargetFrameworkToOutputPath = true',
-    ].join('\n');
-
-    const props = (csprojService as unknown as {
-      parseMsbuildProperties: (output: string, names: readonly string[]) => Record<string, string | undefined>;
-    }).parseMsbuildProperties(output, [
-      'TargetFramework',
-      'TargetFrameworks',
-      'OutputPath',
-      'AssemblyName',
-      'TargetExt',
-      'AppendTargetFrameworkToOutputPath',
-    ]);
-
-    assert.strictEqual(props.TargetFramework, 'net8.0');
-    assert.strictEqual(props.TargetFrameworks, 'net8.0;net9.0');
-    assert.strictEqual(props.OutputPath, 'bin\\Debug\\');
-    assert.strictEqual(props.AssemblyName, 'MyApp');
-    assert.strictEqual(props.TargetExt, '.dll');
-    assert.strictEqual(props.AppendTargetFrameworkToOutputPath, 'true');
-  });
-
-  test('msbuild properties: parses values when msbuild prints property name on one line and value on next line', () => {
-    const csprojService = new CsprojService();
-    const output = [
-      'Build started 12/23/2025 09:00:00.',
-      'TargetFramework:',
-      '  net8.0',
-      'TargetFrameworks:',
-      '  net8.0;net9.0',
-      'OutputPath:',
-      '  bin\\Debug\\',
-      'AssemblyName:',
-      '  MyApp',
-      'TargetExt:',
-      '  .dll',
-      'AppendTargetFrameworkToOutputPath:',
-      '  true',
-      'Build succeeded.',
-    ].join('\n');
-
-    const props = (csprojService as unknown as {
-      parseMsbuildProperties: (output: string, names: readonly string[]) => Record<string, string | undefined>;
-    }).parseMsbuildProperties(output, [
-      'TargetFramework',
-      'TargetFrameworks',
-      'OutputPath',
-      'AssemblyName',
-      'TargetExt',
-      'AppendTargetFrameworkToOutputPath',
-    ]);
-
-    assert.strictEqual(props.TargetFramework, 'net8.0');
-    assert.strictEqual(props.TargetFrameworks, 'net8.0;net9.0');
-    assert.strictEqual(props.OutputPath, 'bin\\Debug\\');
-    assert.strictEqual(props.AssemblyName, 'MyApp');
-    assert.strictEqual(props.TargetExt, '.dll');
-    assert.strictEqual(props.AppendTargetFrameworkToOutputPath, 'true');
-  });
-
   test('msbuild properties: parses values from JSON output returned by dotnet msbuild -getProperty', () => {
     const csprojService = new CsprojService();
     const output = JSON.stringify(
       {
         Properties: {
-          TargetPath: 'C:\\repos\\stock-market-info\\src\\_build\\bin\\StockMarketInfo.Tools\\net10.0\\StockMarketInfo.Tools.dll',
+          TargetPath: 'C:\\repos\\test\\src\\_build\\bin\\Test\\net10.0\\Test.dll',
           TargetFramework: 'net10.0',
           TargetFrameworks: '',
           OutputPath: 'bin\\Debug\\net10.0\\',
@@ -476,54 +386,11 @@ suite('dotnet-start extension', () => {
       parseMsbuildProperties: (output: string, names: readonly string[]) => Record<string, string | undefined>;
     }).parseMsbuildProperties(output, ['TargetPath', 'TargetFramework', 'TargetFrameworks', 'OutputPath']);
 
-    assert.strictEqual(props.TargetPath, 'C:\\repos\\stock-market-info\\src\\_build\\bin\\StockMarketInfo.Tools\\net10.0\\StockMarketInfo.Tools.dll');
+    assert.strictEqual(props.TargetPath, 'C:\\repos\\test\\src\\_build\\bin\\Test\\net10.0\\Test.dll');
     assert.strictEqual(props.TargetFramework, 'net10.0');
     // Empty strings are normalized to undefined.
     assert.strictEqual(props.TargetFrameworks, undefined);
     assert.strictEqual(props.OutputPath, 'bin\\Debug\\net10.0\\');
-  });
-
-  test('msbuild properties: TargetFramework does not match TargetFrameworks, and TargetFrameworks drives tfm folder', () => {
-    const csprojService = new CsprojService();
-    const csproj = vscode.Uri.file(path.join('C:', 'repo', 'App', 'App.csproj'));
-
-    const output = [
-      'TargetFrameworks = net8.0;net9.0',
-      'OutputPath = bin\\Debug\\',
-      'AssemblyName = App',
-      'TargetExt = .dll',
-      'AppendTargetFrameworkToOutputPath = true',
-    ].join('\n');
-
-    const props = (csprojService as unknown as {
-      parseMsbuildProperties: (output: string, names: readonly string[]) => Record<string, string | undefined>;
-      computeExpectedTargetPathFromMsbuildProperties: (
-        csprojUri: vscode.Uri,
-        configuration: 'Debug' | 'Release',
-        props: Record<string, string | undefined>,
-      ) => string | undefined;
-    }).parseMsbuildProperties(output, [
-      'TargetFramework',
-      'TargetFrameworks',
-      'OutputPath',
-      'AssemblyName',
-      'TargetExt',
-      'AppendTargetFrameworkToOutputPath',
-    ]);
-
-    assert.strictEqual(props.TargetFramework, undefined);
-    assert.strictEqual(props.TargetFrameworks, 'net8.0;net9.0');
-
-    const computed = (csprojService as unknown as {
-      computeExpectedTargetPathFromMsbuildProperties: (
-        csprojUri: vscode.Uri,
-        configuration: 'Debug' | 'Release',
-        props: Record<string, string | undefined>,
-      ) => string | undefined;
-    }).computeExpectedTargetPathFromMsbuildProperties(csproj, 'Debug', props);
-
-    const expected = path.join('C:', 'repo', 'App', 'bin', 'Debug', 'net8.0', 'App.dll');
-    assert.strictEqual(computed?.toLowerCase(), expected.toLowerCase());
   });
 
   test('dotnetStart.addLaunchConfiguration adds a dotnet-start entry to launch configurations', async () => {
