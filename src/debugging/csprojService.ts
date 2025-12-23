@@ -7,6 +7,7 @@ import {
   MsbuildProjectProperties,
   MsbuildProjectPropertiesService,
 } from './msbuildProjectPropertiesService';
+import { OutputChannelService } from '../output/outputChannelService';
 
 type LaunchProfileDetails = {
   commandName?: string;
@@ -27,6 +28,18 @@ type LaunchProfileDetails = {
 export class CsprojService {
   private readonly msbuild = new MsbuildProjectPropertiesService();
 
+  private log(message: string): void {
+    OutputChannelService.appendLine(`[dotnet-start] ${message}`);
+  }
+
+  private toWorkspaceRelative(uri: vscode.Uri): string {
+    try {
+      return vscode.workspace.asRelativePath(uri, false).replaceAll('\\', '/');
+    } catch {
+      return uri.fsPath;
+    }
+  }
+
   public parseMsbuildProperties(output: string, names: readonly string[]): Record<string, string | undefined> {
     return this.msbuild.parseMsbuildProperties(output, names);
   }
@@ -46,19 +59,24 @@ export class CsprojService {
       vscode.Uri.file(path.join(projectDir, 'launchSettings.json')),
     ];
 
+    this.log(`Searching launchSettings.json for ${this.toWorkspaceRelative(csprojUri)}.`);
+
     for (const candidate of candidates) {
       try {
         await vscode.workspace.fs.stat(candidate);
+        this.log(`Found launchSettings.json at ${this.toWorkspaceRelative(candidate)}.`);
         return candidate;
       } catch {
         // ignore
       }
     }
 
+    this.log('No launchSettings.json found (checked Properties/launchSettings.json and launchSettings.json).');
     return undefined;
   }
 
   public async readLaunchProfileNames(launchSettingsUri: vscode.Uri): Promise<string[]> {
+    this.log(`Reading launch profiles from ${this.toWorkspaceRelative(launchSettingsUri)}.`);
     const bytes = await vscode.workspace.fs.readFile(launchSettingsUri);
     const text = Buffer.from(bytes).toString('utf8');
     const json = JSON.parse(text) as unknown;
@@ -69,10 +87,13 @@ export class CsprojService {
 
     const profiles = (json as { profiles?: unknown }).profiles;
     if (!profiles || typeof profiles !== 'object') {
+      this.log('launchSettings.json has no "profiles" object.');
       return [];
     }
 
-    return Object.keys(profiles as Record<string, unknown>).sort((a, b) => a.localeCompare(b));
+    const names = Object.keys(profiles as Record<string, unknown>).sort((a, b) => a.localeCompare(b));
+    this.log(`Found ${names.length} launch profile(s).`);
+    return names;
   }
 
   public async buildCoreclrDotnetStartConfiguration(options: {
@@ -82,6 +103,8 @@ export class CsprojService {
   }): Promise<vscode.DebugConfiguration | undefined> {
     const { csprojUri, profileName, configurationName } = options;
     const projectDir = path.dirname(csprojUri.fsPath);
+
+    this.log(`Building debug configuration "${configurationName}" for ${this.toWorkspaceRelative(csprojUri)} (profile: ${profileName}).`);
 
     const launchSettingsUri = await this.getLaunchSettingsUriForProject(csprojUri);
     if (!launchSettingsUri) {
@@ -111,7 +134,10 @@ export class CsprojService {
       return undefined;
     }
 
+    this.log('Resolving target binary path (Debug).');
+
     let resolved = await this.resolveTargetBinaryPath(csprojUri);
+    this.log(`Resolved binary: ${this.toWorkspaceRelative(resolved.binaryUri)} (source: ${resolved.source}).`);
     if (!(await this.fileExists(resolved.binaryUri))) {
       void vscode.window.showErrorMessage(
         `Build output was not found at ${resolved.binaryUri.fsPath}. (resolved via ${resolved.source})`,
@@ -125,6 +151,9 @@ export class CsprojService {
     }
 
     const runtimeArgs = this.parseCommandLineArgs(details.commandLineArgs);
+
+    this.log(`Runtime args: ${runtimeArgs.length > 0 ? runtimeArgs.join(' ') : '(none)'}`);
+    this.log(`Env vars: ${Object.keys(env).length} key(s).`);
 
     return {
       type: 'coreclr',
@@ -245,9 +274,12 @@ export class CsprojService {
     const projectName = path.parse(csprojUri.fsPath).name;
     const base = vscode.Uri.file(projectDir);
 
+    this.log('Attempting fallback DLL search under bin/Debug.');
+
     const preferredPattern = new vscode.RelativePattern(base, `bin/Debug/**/${projectName}.dll`);
     const preferred = await vscode.workspace.findFiles(preferredPattern, '**/{obj,node_modules,.git,.vs}/**', 2);
     if (preferred.length > 0) {
+      this.log(`Fallback search hit (preferred): ${this.toWorkspaceRelative(preferred[0])}.`);
       return preferred[0];
     }
 
@@ -255,6 +287,7 @@ export class CsprojService {
     const anyDebug = await vscode.workspace.findFiles(anyDebugDllPattern, '**/{obj,node_modules,.git,.vs}/**', 20);
     if (anyDebug.length > 0) {
       const exact = anyDebug.find((u) => path.basename(u.fsPath).toLowerCase() === `${projectName.toLowerCase()}.dll`);
+      this.log(`Fallback search hit (bin/Debug/**/*.dll): ${this.toWorkspaceRelative((exact ?? anyDebug[0])!)}.`);
       return exact ?? anyDebug[0];
     }
 
@@ -262,37 +295,77 @@ export class CsprojService {
     const anyDll = await vscode.workspace.findFiles(anyDllPattern, '**/{obj,node_modules,.git,.vs}/**', 50);
     if (anyDll.length > 0) {
       const exact = anyDll.find((u) => path.basename(u.fsPath).toLowerCase() === `${projectName.toLowerCase()}.dll`);
+      this.log(`Fallback search hit (any dll): ${this.toWorkspaceRelative((exact ?? anyDll[0])!)}.`);
       return exact ?? anyDll[0];
     }
 
+    this.log('Fallback DLL search found nothing.');
     return undefined;
+  }
+
+  private logMsbuildProjectProperties(props: MsbuildProjectProperties): void {
+    const keys: readonly (keyof MsbuildProjectProperties)[] = [
+      'TargetPath',
+      'TargetFramework',
+      'TargetFrameworks',
+      'OutputPath',
+      'BaseOutputPath',
+      'AssemblyName',
+      'TargetExt',
+      'TargetFileName',
+      'AppendTargetFrameworkToOutputPath',
+    ];
+
+    const parts = keys.map((k) => {
+      const v = props[k];
+      return `${String(k)}=${typeof v === 'string' && v.trim().length > 0 ? v : '<unset>'}`;
+    });
+
+    this.log(`MSBuild properties: ${parts.join(', ')}`);
   }
 
   private async resolveTargetBinaryPath(
     csprojUri: vscode.Uri,
   ): Promise<{ binaryUri: vscode.Uri; source: 'msbuild' | 'fallback-search' }> {
-    const fallback = await this.findFallbackOutputDll(csprojUri);
-    if (fallback) {
-      return { binaryUri: fallback, source: 'fallback-search' };
-    }
-
     const projectDir = path.dirname(csprojUri.fsPath);
-    const props: MsbuildProjectProperties | undefined = await this.msbuild.tryGetProjectProperties(csprojUri, { configuration: 'Debug' });
+    const projectName = path.parse(csprojUri.fsPath).name;
+
+    const props: MsbuildProjectProperties | undefined = await this.msbuild.tryGetProjectProperties(csprojUri, {
+      configuration: 'Debug',
+    });
     if (props) {
+      this.log('MSBuild properties fetched successfully.');
+      this.logMsbuildProjectProperties(props);
+
       const directTargetPath = props.TargetPath && props.TargetPath.trim().length > 0 ? props.TargetPath : undefined;
       if (directTargetPath) {
         const normalized = directTargetPath.trim();
         const absolute = path.isAbsolute(normalized) ? normalized : path.join(projectDir, normalized);
+        this.log(`Using MSBuild TargetPath: ${absolute}.`);
         return { binaryUri: vscode.Uri.file(absolute), source: 'msbuild' };
       }
 
       const computed = this.msbuild.computeExpectedTargetPath(csprojUri, 'Debug', props);
       if (computed) {
+        this.log(`Computed expected target path from MSBuild properties: ${computed}.`);
         return { binaryUri: vscode.Uri.file(computed), source: 'msbuild' };
       }
+
+      this.log('MSBuild did not provide TargetPath or a computable target path; trying fallback DLL search.');
+    } else {
+      this.log('Failed to fetch MSBuild properties (dotnet msbuild -getProperty:*).');
     }
 
-    return { binaryUri: vscode.Uri.file(csprojUri.fsPath), source: 'fallback-search' };
+    const fallback = await this.findFallbackOutputDll(csprojUri);
+    if (fallback) {
+      return { binaryUri: fallback, source: 'fallback-search' };
+    }
+
+    // Last resort: point at a reasonable default so we can error clearly if it's missing.
+    return {
+      binaryUri: vscode.Uri.file(path.join(projectDir, 'bin', 'Debug', `${projectName}.dll`)),
+      source: 'fallback-search',
+    };
   }
 
   public async runDotnetBuild(

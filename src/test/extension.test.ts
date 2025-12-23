@@ -541,18 +541,7 @@ suite('dotnet-start extension', () => {
       },
     } as unknown as vscode.ExtensionContext;
 
-    const fakeOutputChannel = {
-      name: 'dotnet-start',
-      append: () => undefined,
-      appendLine: () => undefined,
-      clear: () => undefined,
-      replace: () => undefined,
-      show: () => undefined,
-      hide: () => undefined,
-      dispose: () => undefined,
-    } as unknown as vscode.OutputChannel;
-
-    const provider = createDotnetStartDebugConfigurationProvider(fakeContext, fakeOutputChannel);
+    const provider = createDotnetStartDebugConfigurationProvider(fakeContext);
     assert.ok(provider.provideDebugConfigurations, 'Expected provider.provideDebugConfigurations to be defined.');
 
     const configs = await provider.provideDebugConfigurations(undefined);
