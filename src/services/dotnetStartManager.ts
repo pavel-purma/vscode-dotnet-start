@@ -63,6 +63,18 @@ export class DotnetStartManager {
     return (await this.getSelectedProject()) ?? (await this.selectStartProject());
   }
 
+  public async ensureSelectedProjectAndProfile(): Promise<{ csprojUri: vscode.Uri; profileName: string } | undefined> {
+    const csprojUri = await this.ensureSelectedProject();
+    if (!csprojUri) {
+      return undefined;
+    }
+    const profileName = await this.ensureSelectedProfile(csprojUri);
+    if (!profileName) {
+      return undefined;
+    }
+    return { csprojUri, profileName };
+  }
+
   public async selectLaunchProfile(csprojUri: vscode.Uri): Promise<string | undefined> {
     const picked = await this.pickLaunchProfileInternal(csprojUri, {
       title: 'Select launch profile (launchSettings.json)',
@@ -126,10 +138,6 @@ export class DotnetStartManager {
     return picked?.action;
   }
 
-  public getWorkspaceFolderForProject(csprojUri: vscode.Uri): vscode.WorkspaceFolder | undefined {
-    return this.getWorkspaceFolderForUri(csprojUri) ?? this.getAnyWorkspaceFolder();
-  }
-
   public async getSelectedProject(): Promise<vscode.Uri | undefined> {
     const stored = this.workspaceState.get<string>(constants.STATE_KEY_CSPROJ);
     if (!stored) {
@@ -177,20 +185,12 @@ export class DotnetStartManager {
     return vscode.workspace.findFiles('**/*.csproj', '**/{bin,obj,node_modules,.git,.vs}/**');
   }
 
-  private getWorkspaceFolderForUri(uri: vscode.Uri): vscode.WorkspaceFolder | undefined {
-    return vscode.workspace.getWorkspaceFolder(uri);
-  }
-
-  private getAnyWorkspaceFolder(): vscode.WorkspaceFolder | undefined {
-    return vscode.workspace.workspaceFolders?.[0];
-  }
-
   private async pickLaunchProfileInternal(
     csprojUri: vscode.Uri,
     options: { title: string; placeHolder: string },
   ): Promise<string | undefined> {
-    const csprojService = new CsprojInstance(csprojUri);
-    const launchSettingsUri = await csprojService.getLaunchSettingsUriForProject();
+    const csproj = new CsprojInstance(csprojUri);
+    const launchSettingsUri = await csproj.getLaunchSettingsUriForProject();
     if (!launchSettingsUri) {
       void vscode.window.showErrorMessage(
         `No launchSettings.json found for ${path.basename(csprojUri.fsPath)} (expected Properties/launchSettings.json).`,
@@ -200,7 +200,7 @@ export class DotnetStartManager {
 
     let profileNames: string[];
     try {
-      profileNames = await csprojService.readLaunchProfileNames(launchSettingsUri);
+      profileNames = await csproj.readLaunchProfileNames(launchSettingsUri);
     } catch (e) {
       void vscode.window.showErrorMessage(`Failed to read launch profiles: ${String(e)}`);
       return undefined;

@@ -8,6 +8,7 @@ import {
   MsbuildProjectPropertiesService,
 } from './msbuildProjectPropertiesService';
 import { OutputChannelService } from './outputChannelService';
+import { markDotnetStartResolved } from '../shared/utils';
 
 type LaunchProfileDetails = {
   commandName?: string;
@@ -45,6 +46,14 @@ export class CsprojInstance {
     } catch {
       return uri.fsPath;
     }
+  }
+
+  public getWorkspaceFolder(): vscode.WorkspaceFolder {
+    const wsFolder = vscode.workspace.getWorkspaceFolder(this.csprojUri);
+    if (!wsFolder) {
+      throw new Error(`Workspace folder not found for ${this.csprojUri.fsPath}`);
+    }
+    return wsFolder;
   }
 
   public async getLaunchSettingsUriForProject(): Promise<vscode.Uri | undefined> {
@@ -149,7 +158,7 @@ export class CsprojInstance {
     this.log(`Runtime args: ${runtimeArgs.length > 0 ? runtimeArgs.join(' ') : '(none)'}`);
     this.log(`Env vars: ${Object.keys(env).length} key(s).`);
 
-    return {
+    const ret = {
       type: 'coreclr',
       request: 'launch',
       name: configurationName,
@@ -160,6 +169,9 @@ export class CsprojInstance {
       internalConsoleOptions: 'neverOpen',
       env,
     };
+
+    const resolvedDebugConfig = markDotnetStartResolved(ret);
+    return resolvedDebugConfig;
   }
 
   private coerceStringRecord(value: unknown): Record<string, string> {
