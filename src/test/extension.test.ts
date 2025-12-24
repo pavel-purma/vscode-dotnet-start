@@ -3,74 +3,13 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import * as constants from '../shared/constants';
-import {
-  createDotnetStartDebugConfigurationProvider
-} from '../extension';
-import {
-  MsbuildProjectPropertiesService,
-} from '../services/msbuildProjectPropertiesService';
+import { createDotnetStartDebugConfigurationProvider } from '../extension';
+import { MsbuildProjectPropertiesService, } from '../services/msbuildProjectPropertiesService';
 import { DotnetStartManager } from '../services/dotnetStartManager';
 
+import * as testUtils from './testUtils';
+
 type AnyQuickPickItem = vscode.QuickPickItem & Record<string, unknown>;
-
-type Mutable<T> = { -readonly [K in keyof T]: T[K] };
-
-function patchProp<T extends object, K extends keyof T>(target: T, key: K, value: T[K]): () => void {
-  const mutable = target as unknown as Mutable<T>;
-  const originalDescriptor = Object.getOwnPropertyDescriptor(target, key);
-  const hadOwnDescriptor = Boolean(originalDescriptor);
-  const originalValue = mutable[key];
-
-  try {
-    mutable[key] = value;
-  } catch {
-    Object.defineProperty(target, key, {
-      configurable: true,
-      enumerable: originalDescriptor?.enumerable ?? true,
-      writable: true,
-      value,
-    });
-  }
-
-  return () => {
-    if (hadOwnDescriptor && originalDescriptor) {
-      Object.defineProperty(target, key, originalDescriptor);
-      return;
-    }
-
-    try {
-      delete (target as Record<string, unknown>)[key as unknown as string];
-    } catch {
-      // ignore
-    }
-
-    try {
-      (mutable as Record<string, unknown>)[key as unknown as string] = originalValue as unknown;
-    } catch {
-      // ignore
-    }
-  };
-}
-
-async function ensureEmptyDir(dirUri: vscode.Uri): Promise<void> {
-  try {
-    await vscode.workspace.fs.delete(dirUri, { recursive: true, useTrash: false });
-  } catch {
-    // ignore
-  }
-  await vscode.workspace.fs.createDirectory(dirUri);
-}
-
-async function writeTextFile(fileUri: vscode.Uri, contents: string): Promise<void> {
-  await vscode.workspace.fs.createDirectory(vscode.Uri.file(path.dirname(fileUri.fsPath)));
-  await vscode.workspace.fs.writeFile(fileUri, Buffer.from(contents, 'utf8'));
-}
-
-function getWorkspaceRoot(): vscode.WorkspaceFolder {
-  const wsFolder = vscode.workspace.workspaceFolders?.[0];
-  assert.ok(wsFolder, 'Expected a workspace folder to be open during extension tests.');
-  return wsFolder;
-}
 
 suite('dotnet-start extension', () => {
   let fixtureRoot: vscode.Uri;
@@ -82,14 +21,14 @@ suite('dotnet-start extension', () => {
     previousSkipBuildEnv = process.env.DOTNET_START_SKIP_DOTNET_BUILD;
     process.env.DOTNET_START_SKIP_DOTNET_BUILD = '1';
 
-    const wsFolder = getWorkspaceRoot();
+    const wsFolder = testUtils.getWorkspaceRoot();
     fixtureRoot = vscode.Uri.joinPath(wsFolder.uri, 'out', 'test-fixtures', 'dotnet-start');
-    await ensureEmptyDir(fixtureRoot);
+    await testUtils.ensureEmptyDir(fixtureRoot);
 
     csprojUri = vscode.Uri.joinPath(fixtureRoot, 'App', 'App.csproj');
     launchSettingsUri = vscode.Uri.joinPath(fixtureRoot, 'App', 'Properties', 'launchSettings.json');
 
-    await writeTextFile(
+    await testUtils.writeTextFile(
       csprojUri,
       [...
         '<?xml version="1.0" encoding="utf-8"?>',
@@ -102,7 +41,7 @@ suite('dotnet-start extension', () => {
       ].join('\n'),
     );
 
-    await writeTextFile(
+    await testUtils.writeTextFile(
       launchSettingsUri,
       JSON.stringify(
         {
@@ -122,7 +61,7 @@ suite('dotnet-start extension', () => {
 
     // Create a fake build output so tests don't require a real `dotnet build`.
     const dllUri = vscode.Uri.joinPath(fixtureRoot, 'App', 'bin', 'Debug', 'net8.0', 'App.dll');
-    await writeTextFile(dllUri, '');
+    await testUtils.writeTextFile(dllUri, '');
   });
 
   teardown(async () => {
@@ -154,7 +93,7 @@ suite('dotnet-start extension', () => {
     let infoMessageCalls = 0;
 
     try {
-      restoreCreateQuickPick = patchProp(
+      restoreCreateQuickPick = testUtils.patchProp(
         vscode.window,
         'createQuickPick',
         (() => {
@@ -196,7 +135,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.createQuickPick,
       );
 
-      restoreShowQuickPick = patchProp(
+      restoreShowQuickPick = testUtils.patchProp(
         vscode.window,
         'showQuickPick',
         (async (items: readonly AnyQuickPickItem[], _options?: vscode.QuickPickOptions) => {
@@ -223,7 +162,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.showQuickPick,
       );
 
-      restoreStartDebugging = patchProp(
+      restoreStartDebugging = testUtils.patchProp(
         vscode.debug,
         'startDebugging',
         (async (folder: vscode.WorkspaceFolder, config: vscode.DebugConfiguration) => {
@@ -233,7 +172,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.debug.startDebugging,
       );
 
-      restoreShowInformationMessage = patchProp(
+      restoreShowInformationMessage = testUtils.patchProp(
         vscode.window,
         'showInformationMessage',
         (async (_message: string, ..._items: string[]) => {
@@ -281,7 +220,7 @@ suite('dotnet-start extension', () => {
     let sawOneOffProfileTitle = false;
 
     try {
-      restoreCreateQuickPick = patchProp(
+      restoreCreateQuickPick = testUtils.patchProp(
         vscode.window,
         'createQuickPick',
         (() => {
@@ -319,7 +258,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.createQuickPick,
       );
 
-      restoreShowQuickPick = patchProp(
+      restoreShowQuickPick = testUtils.patchProp(
         vscode.window,
         'showQuickPick',
         (async (items: readonly AnyQuickPickItem[], options?: vscode.QuickPickOptions) => {
@@ -348,7 +287,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.showQuickPick,
       );
 
-      restoreStartDebugging = patchProp(
+      restoreStartDebugging = testUtils.patchProp(
         vscode.debug,
         'startDebugging',
         (async (_folder: vscode.WorkspaceFolder, config: vscode.DebugConfiguration) => {
@@ -421,7 +360,7 @@ suite('dotnet-start extension', () => {
     let infoCalls = 0;
 
     try {
-      restoreGetConfiguration = patchProp(
+      restoreGetConfiguration = testUtils.patchProp(
         vscode.workspace,
         'getConfiguration',
         ((): unknown => {
@@ -449,7 +388,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.workspace.getConfiguration,
       );
 
-      restoreShowInformationMessage = patchProp(
+      restoreShowInformationMessage = testUtils.patchProp(
         vscode.window,
         'showInformationMessage',
         (async (_message: string, ..._items: string[]) => {
@@ -497,7 +436,7 @@ suite('dotnet-start extension', () => {
   });
 
   test('dotnetStart.selectStartProject shows error when no .csproj exists', async () => {
-    await ensureEmptyDir(fixtureRoot);
+    await testUtils.ensureEmptyDir(fixtureRoot);
     const csprojs = await vscode.workspace.findFiles('**/*.csproj', '**/{bin,obj,node_modules,.git,.vs}/**');
     assert.strictEqual(csprojs.length, 0, 'Expected the workspace to contain no .csproj files for this test.');
 
@@ -506,7 +445,7 @@ suite('dotnet-start extension', () => {
 
     let errorMessage: string | undefined;
     try {
-      restoreShowQuickPick = patchProp(
+      restoreShowQuickPick = testUtils.patchProp(
         vscode.window,
         'showQuickPick',
         (async (_items: readonly AnyQuickPickItem[], _options?: vscode.QuickPickOptions) => {
@@ -514,7 +453,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.showQuickPick,
       );
 
-      restoreShowErrorMessage = patchProp(
+      restoreShowErrorMessage = testUtils.patchProp(
         vscode.window,
         'showErrorMessage',
         (async (message: string, ..._items: string[]) => {
@@ -540,7 +479,7 @@ suite('dotnet-start extension', () => {
     let secondCallCurrentIsFirstItem = false;
 
     try {
-      restoreShowQuickPick = patchProp(
+      restoreShowQuickPick = testUtils.patchProp(
         vscode.window,
         'showQuickPick',
         (async (items: readonly AnyQuickPickItem[], _options?: vscode.QuickPickOptions) => {
@@ -590,7 +529,7 @@ suite('dotnet-start extension', () => {
     try {
       // Ensure the action picker is stable for this test:
       // - No existing dotnet-start config in launch configurations
-      restoreGetConfiguration = patchProp(
+      restoreGetConfiguration = testUtils.patchProp(
         vscode.workspace,
         'getConfiguration',
         ((): unknown => {
@@ -606,7 +545,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.workspace.getConfiguration,
       );
 
-      restoreShowInformationMessage = patchProp(
+      restoreShowInformationMessage = testUtils.patchProp(
         vscode.window,
         'showInformationMessage',
         (async (message: string, ..._items: string[]) => {
@@ -624,7 +563,7 @@ suite('dotnet-start extension', () => {
       await vscode.commands.executeCommand('dotnetStart.clearState');
       clearStateInfoCalls = 0;
 
-      restoreCreateQuickPick = patchProp(
+      restoreCreateQuickPick = testUtils.patchProp(
         vscode.window,
         'createQuickPick',
         (() => {
@@ -662,7 +601,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.createQuickPick,
       );
 
-      restoreShowQuickPick = patchProp(
+      restoreShowQuickPick = testUtils.patchProp(
         vscode.window,
         'showQuickPick',
         (async (items: readonly AnyQuickPickItem[], _options?: vscode.QuickPickOptions) => {
@@ -689,7 +628,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.showQuickPick,
       );
 
-      restoreStartDebugging = patchProp(
+      restoreStartDebugging = testUtils.patchProp(
         vscode.debug,
         'startDebugging',
         (async () => true) as unknown as typeof vscode.debug.startDebugging,
@@ -739,7 +678,7 @@ suite('dotnet-start extension', () => {
       'launchSettings.json',
     );
 
-    await writeTextFile(
+    await testUtils.writeTextFile(
       secondCsprojUri,
       [
         '<?xml version="1.0" encoding="utf-8"?>',
@@ -752,7 +691,7 @@ suite('dotnet-start extension', () => {
       ].join('\n'),
     );
 
-    await writeTextFile(
+    await testUtils.writeTextFile(
       secondLaunchSettingsUri,
       JSON.stringify(
         {
@@ -767,7 +706,7 @@ suite('dotnet-start extension', () => {
     );
 
     const secondDllUri = vscode.Uri.joinPath(fixtureRoot, 'App2', 'bin', 'Debug', 'net8.0', 'App2.dll');
-    await writeTextFile(secondDllUri, '');
+    await testUtils.writeTextFile(secondDllUri, '');
 
     // VS Code's file search index can lag slightly behind filesystem writes in the test host.
     // Ensure the new csproj is discoverable before we try to select it.
@@ -791,7 +730,7 @@ suite('dotnet-start extension', () => {
     let capturedArgs: string[] | undefined;
 
     try {
-      restoreCreateQuickPick = patchProp(
+      restoreCreateQuickPick = testUtils.patchProp(
         vscode.window,
         'createQuickPick',
         (() => {
@@ -829,7 +768,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.createQuickPick,
       );
 
-      restoreShowQuickPick = patchProp(
+      restoreShowQuickPick = testUtils.patchProp(
         vscode.window,
         'showQuickPick',
         (async (items: readonly AnyQuickPickItem[], _options?: vscode.QuickPickOptions) => {
@@ -867,7 +806,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.showQuickPick,
       );
 
-      restoreStartDebugging = patchProp(
+      restoreStartDebugging = testUtils.patchProp(
         vscode.debug,
         'startDebugging',
         (async (_folder: vscode.WorkspaceFolder, config: vscode.DebugConfiguration) => {
@@ -914,7 +853,7 @@ suite('dotnet-start extension', () => {
     let restoreStartDebugging: (() => void) | undefined;
 
     // Replace the fixture launchSettings.json with a single profile.
-    await writeTextFile(
+    await testUtils.writeTextFile(
       launchSettingsUri,
       JSON.stringify(
         {
@@ -933,7 +872,7 @@ suite('dotnet-start extension', () => {
     let capturedArgs: string[] | undefined;
 
     try {
-      restoreCreateQuickPick = patchProp(
+      restoreCreateQuickPick = testUtils.patchProp(
         vscode.window,
         'createQuickPick',
         (() => {
@@ -971,7 +910,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.createQuickPick,
       );
 
-      restoreShowQuickPick = patchProp(
+      restoreShowQuickPick = testUtils.patchProp(
         vscode.window,
         'showQuickPick',
         (async (items: readonly AnyQuickPickItem[], _options?: vscode.QuickPickOptions) => {
@@ -998,7 +937,7 @@ suite('dotnet-start extension', () => {
         }) as unknown as typeof vscode.window.showQuickPick,
       );
 
-      restoreStartDebugging = patchProp(
+      restoreStartDebugging = testUtils.patchProp(
         vscode.debug,
         'startDebugging',
         (async (_folder: vscode.WorkspaceFolder, config: vscode.DebugConfiguration) => {
