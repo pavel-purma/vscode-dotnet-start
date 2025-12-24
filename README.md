@@ -21,13 +21,19 @@ If you prefer the standard VS Code flow, you can also press `F5` and choose **do
 
 In your workspace:
 
-- Choose a `.csproj` in your workspace as the **start project**.
-- Choose a `launchSettings.json` **launch profile** (Visual Studio-style profiles).
-- Press `Alt+F5` to start debugging the selected project/profile.
+1. Use the dedicated dotnet-start shortcut to run **dotnet-start: Start Debugging**
 
-Optional: you can also press `F5` and select **dotnet-start** from VS Code’s debug configuration picker (subject to VS Code’s normal “select/create a debug configuration” prompts when no `launch.json` exists).
+   - Press `Alt+F5` to start debugging the selected project/profile.
+   - Choose a `.csproj` in your workspace as the **start project**. This picker appears automatically if no project is selected yet.
+   - Choose a `launchSettings.json` **launch profile** (Visual Studio-style profiles). This picker appears automatically if no profile is selected yet.
 
-Optional: you can also add a `dotnet-start` entry to your workspace’s `launch.json` (via the command **dotnet-start: Add dotnet-start to launch.json**). After that, selecting **dotnet-start** as your active debug configuration makes `F5` behave like your regular “start debugging” trigger—except it will start the `.csproj` and launch profile you selected with this extension.
+2. Or press `F5` and select **dotnet-start** from VS Code’s debug configuration picker
+
+   - This is useful if you want to use VS Code’s normal debug flow, especially when there is no `.vscode/launch.json` yet.
+   - It will offer dotnet-start option as .NET coreclr debugger option.
+
+3. Add an entry to your workspace’s `launch.json`
+   - Run **dotnet-start: Add dotnet-start to launch.json** to add a debug configuration that you can then select when starting debugging with `F5`.
 
 ```launch.json
 {
