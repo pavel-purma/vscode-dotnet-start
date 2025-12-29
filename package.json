@@ -1,6 +1,6 @@
 {
     "name": "dotnet-start",
-    "version": "0.0.1",
+    "version": "0.0.2",
     "displayName": "dotnet-start",
     "description": "Easy start and debug selected .NET project with launch profiles",
     "repository": {
