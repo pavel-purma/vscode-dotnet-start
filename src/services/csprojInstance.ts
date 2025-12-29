@@ -95,7 +95,7 @@ export class CsprojInstance {
       return [];
     }
 
-    const names = Object.keys(profiles as Record<string, unknown>).sort((a, b) => a.localeCompare(b));
+    const names = Object.keys(profiles as Record<string, unknown>);
     this.log(`Found ${names.length} launch profile(s).`);
     return names;
   }
