@@ -100,14 +100,14 @@ export class DotnetStartManager {
 
   public async pickStartAction(options: {
     configurationName: string;
-  }): Promise<'run-selected' | 'run-once-profile' | undefined> {
+  }): Promise<'run-selected' | 'run-once-profile' | 'change-profile' | 'change-project' | undefined> {
     const selectedCsproj = await this.getSelectedProject();
     const selectedProfile = await this.getSelectedProfile();
 
     const currentProjectName = selectedCsproj ? path.parse(selectedCsproj.fsPath).name : undefined;
 
     type ActionPickItem = vscode.QuickPickItem & {
-      action: 'run-selected' | 'run-once-profile';
+      action: 'run-selected' | 'run-once-profile' | 'change-profile' | 'change-project';
     };
 
     const runSelectedItem: ActionPickItem = {
@@ -127,8 +127,20 @@ export class DotnetStartManager {
       action: 'run-once-profile'
     };
 
+    const changeProfileItem: ActionPickItem = {
+      label: 'Change launch profile',
+      detail: 'Select a new launch profile, save it as default, and start debugging',
+      action: 'change-profile',
+    };
+
+    const changeProjectItem: ActionPickItem = {
+      label: 'Change project and profile',
+      detail: 'Select a new start project and launch profile, save as default, and start debugging',
+      action: 'change-project',
+    };
+
     const picked = await this.showPreselectedQuickPick<ActionPickItem>(
-      [runSelectedItem, runOnceItem],
+      [runSelectedItem, runOnceItem, changeProfileItem, changeProjectItem],
       runSelectedItem,
       {
         title: 'Start debugging',

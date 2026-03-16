@@ -119,6 +119,38 @@ async function startDotnetDebuggingWithOneOffProfile(
   await initiateVscodeDebugger(csprojUri, profileName);
 }
 
+async function startDotnetDebuggingWithNewProfile(
+  manager: DotnetStartManager,
+): Promise<void> {
+  const csprojUri = await manager.ensureSelectedProject();
+  if (!csprojUri) {
+    return;
+  }
+
+  const profileName = await manager.selectLaunchProfile(csprojUri);
+  if (!profileName) {
+    return;
+  }
+
+  await initiateVscodeDebugger(csprojUri, profileName);
+}
+
+async function startDotnetDebuggingWithNewProject(
+  manager: DotnetStartManager,
+): Promise<void> {
+  const csprojUri = await manager.selectStartProject();
+  if (!csprojUri) {
+    return;
+  }
+
+  const profileName = await manager.selectLaunchProfile(csprojUri);
+  if (!profileName) {
+    return;
+  }
+
+  await initiateVscodeDebugger(csprojUri, profileName);
+}
+
 async function runAltF5Picker(manager: DotnetStartManager): Promise<void> {
   const action = await manager.pickStartAction({
     configurationName: constants.DOTNET_START_CONFIGURATION_NAME,
@@ -134,6 +166,16 @@ async function runAltF5Picker(manager: DotnetStartManager): Promise<void> {
 
   if (action === 'run-once-profile') {
     await startDotnetDebuggingWithOneOffProfile(manager);
+    return;
+  }
+
+  if (action === 'change-profile') {
+    await startDotnetDebuggingWithNewProfile(manager);
+    return;
+  }
+
+  if (action === 'change-project') {
+    await startDotnetDebuggingWithNewProject(manager);
   }
 }
 
