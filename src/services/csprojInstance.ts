@@ -101,40 +101,54 @@ export class CsprojInstance {
   }
 
   public async createVscodeDebugConfiguration(options: {
-    profileName: string;
+    profileName?: string;
     configurationName: string;
   }): Promise<vscode.DebugConfiguration | undefined> {
     const { profileName, configurationName } = options;
     const projectDir = path.dirname(this.csprojUri.fsPath);
 
-    this.log(`Building debug configuration "${configurationName}" for ${CsprojInstance.toWorkspaceRelative(this.csprojUri)} (profile: ${profileName}).`);
+    this.log(`Building debug configuration "${configurationName}" for ${CsprojInstance.toWorkspaceRelative(this.csprojUri)} (profile: ${profileName ?? 'default'}).`);
 
     const launchSettingsUri = await this.getLaunchSettingsUriForProject();
-    if (!launchSettingsUri) {
-      void vscode.window.showErrorMessage(
-        `No launchSettings.json found for ${path.basename(this.csprojUri.fsPath)} (expected Properties/launchSettings.json).`,
-      );
-      return undefined;
-    }
 
     let details: LaunchProfileDetails | undefined;
-    try {
-      details = await this.readLaunchProfileDetails(launchSettingsUri, profileName);
-    } catch (e) {
-      void vscode.window.showErrorMessage(`Failed to read launch profile "${profileName}": ${String(e)}`);
-      return undefined;
-    }
 
-    if (!details) {
-      void vscode.window.showErrorMessage(`Launch profile "${profileName}" was not found in launchSettings.json.`);
-      return undefined;
-    }
+    if (!launchSettingsUri) {
+      // No launchSettings.json — use empty defaults (equivalent to a bare "Project" profile).
+      this.log('Proceeding without launchSettings.json; using default empty launch profile.');
+      details = {
+        commandName: undefined,
+        commandLineArgs: undefined,
+        applicationUrl: undefined,
+        environmentVariables: undefined,
+      };
+    } else {
+      const { profileName } = options;
+      if (!profileName) {
+        void vscode.window.showErrorMessage(
+          `launchSettings.json exists but no profile name was provided.`,
+        );
+        return undefined;
+      }
 
-    if (details.commandName && details.commandName !== 'Project') {
-      void vscode.window.showErrorMessage(
-        `Launch profile "${profileName}" uses commandName="${details.commandName}". Only "Project" is supported.`,
-      );
-      return undefined;
+      try {
+        details = await this.readLaunchProfileDetails(launchSettingsUri, profileName);
+      } catch (e) {
+        void vscode.window.showErrorMessage(`Failed to read launch profile "${profileName}": ${String(e)}`);
+        return undefined;
+      }
+
+      if (!details) {
+        void vscode.window.showErrorMessage(`Launch profile "${profileName}" was not found in launchSettings.json.`);
+        return undefined;
+      }
+
+      if (details.commandName && details.commandName !== 'Project') {
+        void vscode.window.showErrorMessage(
+          `Launch profile "${profileName}" uses commandName="${details.commandName}". Only "Project" is supported.`,
+        );
+        return undefined;
+      }
     }
 
     this.log('Resolving target binary path (Debug).');

@@ -63,15 +63,13 @@ export class DotnetStartManager {
     return (await this.getSelectedProject()) ?? (await this.selectStartProject());
   }
 
-  public async ensureSelectedProjectAndProfile(): Promise<{ csprojUri: vscode.Uri; profileName: string } | undefined> {
+  public async ensureSelectedProjectAndProfile(): Promise<{ csprojUri: vscode.Uri; profileName: string | undefined } | undefined> {
     const csprojUri = await this.ensureSelectedProject();
     if (!csprojUri) {
       return undefined;
     }
     const profileName = await this.ensureSelectedProfile(csprojUri);
-    if (!profileName) {
-      return undefined;
-    }
+    // profileName may be undefined when there is no launchSettings.json — that is valid.
     return { csprojUri, profileName };
   }
 
@@ -88,7 +86,20 @@ export class DotnetStartManager {
   }
 
   public async ensureSelectedProfile(csprojUri: vscode.Uri): Promise<string | undefined> {
-    return (await this.getSelectedProfile()) ?? (await this.selectLaunchProfile(csprojUri));
+    const existing = await this.getSelectedProfile();
+    if (existing) {
+      return existing;
+    }
+
+    // Check if launchSettings.json even exists before prompting.
+    const csproj = new CsprojInstance(csprojUri);
+    const launchSettingsUri = await csproj.getLaunchSettingsUriForProject();
+    if (!launchSettingsUri) {
+      // No launchSettings — no profile needed. Return undefined to signal "use defaults".
+      return undefined;
+    }
+
+    return await this.selectLaunchProfile(csprojUri);
   }
 
   public async selectLaunchProfileOnce(csprojUri: vscode.Uri): Promise<string | undefined> {
@@ -113,9 +124,13 @@ export class DotnetStartManager {
     const runSelectedItem: ActionPickItem = {
       label: options.configurationName,
       description:
-        currentProjectName && selectedProfile ? `${currentProjectName} / ${selectedProfile}` : undefined,
+        currentProjectName
+          ? selectedProfile
+            ? `${currentProjectName} / ${selectedProfile}`
+            : currentProjectName
+          : undefined,
       detail:
-        selectedCsproj && selectedProfile
+        selectedCsproj
           ? toWorkspaceRelativeDetail(selectedCsproj)
           : 'Runs the selected start project and launch profile',
       action: 'run-selected',
@@ -125,6 +140,11 @@ export class DotnetStartManager {
       label: 'Run another profile (once)',
       detail: 'Starts debugging with a one-off launch profile (does not change the saved selection)',
       action: 'run-once-profile'
+    };
+
+    const separator: vscode.QuickPickItem = {
+      label: 'Settings',
+      kind: vscode.QuickPickItemKind.Separator,
     };
 
     const changeProfileItem: ActionPickItem = {
@@ -139,15 +159,20 @@ export class DotnetStartManager {
       action: 'change-project',
     };
 
-    const picked = await this.showPreselectedQuickPick<ActionPickItem>(
-      [runSelectedItem, runOnceItem, changeProfileItem, changeProjectItem],
+    const picked = await this.showPreselectedQuickPick<ActionPickItem | vscode.QuickPickItem>(
+      [runSelectedItem, runOnceItem, separator, changeProfileItem, changeProjectItem],
       runSelectedItem,
       {
         title: 'Start debugging',
         placeHolder: 'Choose a debug action'
       },
     );
-    return picked?.action;
+
+    // Separator items cannot be selected, so a picked item with `action` is always an ActionPickItem.
+    if (picked && 'action' in picked) {
+      return (picked as ActionPickItem).action;
+    }
+    return undefined;
   }
 
   public async getSelectedProject(): Promise<vscode.Uri | undefined> {
@@ -204,9 +229,7 @@ export class DotnetStartManager {
     const csproj = new CsprojInstance(csprojUri);
     const launchSettingsUri = await csproj.getLaunchSettingsUriForProject();
     if (!launchSettingsUri) {
-      void vscode.window.showErrorMessage(
-        `No launchSettings.json found for ${path.basename(csprojUri.fsPath)} (expected Properties/launchSettings.json).`,
-      );
+      // No launchSettings.json — nothing to pick from.
       return undefined;
     }
 

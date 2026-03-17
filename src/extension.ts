@@ -64,7 +64,7 @@ async function buildDotnetProject(csproj: CsprojInstance) {
   output.appendLine('');
 }
 
-async function initiateVscodeDebugger(csprojUri: vscode.Uri, profileName: string) {
+async function initiateVscodeDebugger(csprojUri: vscode.Uri, profileName: string | undefined) {
   const output = OutputChannelService.channel;
 
   const csproj = new CsprojInstance(csprojUri);
@@ -96,7 +96,7 @@ async function startDotnetDebugging(
   manager: DotnetStartManager,
 ): Promise<void> {
   const { csprojUri, profileName } = await manager.ensureSelectedProjectAndProfile() ?? {};
-  if (!csprojUri || !profileName) {
+  if (!csprojUri) {
     return undefined;
   }
 
@@ -183,7 +183,7 @@ async function resolveVscodeDebugConfiguration(
   manager: DotnetStartManager,
 ): Promise<vscode.DebugConfiguration | undefined> {
   const { csprojUri, profileName } = await manager.ensureSelectedProjectAndProfile() ?? {};
-  if (!csprojUri || !profileName) {
+  if (!csprojUri) {
     return undefined;
   }
   const csproj = new CsprojInstance(csprojUri);
