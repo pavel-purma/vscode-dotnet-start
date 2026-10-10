@@ -5,6 +5,8 @@ node_modules/**
 src/**
 .github/**
 AGENTS.md
+CLAUDE.md
+.claude/**
 scripts/**
 .gitignore
 .yarnrc
