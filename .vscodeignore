@@ -4,6 +4,7 @@ out/**
 node_modules/**
 src/**
 .github/**
+AGENTS.md
 scripts/**
 .gitignore
 .yarnrc
