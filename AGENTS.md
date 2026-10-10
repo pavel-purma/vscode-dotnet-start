@@ -15,7 +15,7 @@ This project is a TypeScript VS Code extension that selects a .NET start project
 
 ## Behavior to preserve
 
-- Start debugging through `vscode.debug.startDebugging(...)` using a `coreclr` launch configuration. Build the selected project in Debug, then run `program: "dotnet"` with `args: [builtDllPath, ...profileArgs]`, the project directory as `cwd`, and `console: "integratedTerminal"`. Do not replace this with the old `dotnet run --launch-profile` flow.
+- Start debugging through `vscode.debug.startDebugging(...)` using a `coreclr` launch configuration. Build the selected project in Debug, then run `program: builtDllPath` with `args: profileArgs`, the project directory as `cwd`, and `console: "integratedTerminal"`. Do not replace this with the old `dotnet run --launch-profile` flow.
 - Preserve the Dynamic/Initial debug-provider integration, existing commands and keybinding, action picker, and optional launch configuration generation. Keep command registrations aligned with contributions in [package.json](./package.json).
 - Use native VS Code UI and the existing output channel. Do not introduce webviews or additional UX flows unless requested.
 - Store selected project/profile choices in `context.workspaceState`. Changing the selected project clears its saved profile; one-off profile runs must not overwrite the saved profile.

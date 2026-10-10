@@ -197,12 +197,12 @@ suite('dotnet-start extension', () => {
 
       assert.strictEqual(capturedConfig.type, 'coreclr');
       assert.strictEqual(capturedConfig.request, 'launch');
-      assert.strictEqual(capturedConfig.program, 'dotnet');
+      const expectedDllPath = path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll');
+      assert.strictEqual(capturedConfig.program, expectedDllPath);
       assert.strictEqual(capturedConfig.console, 'integratedTerminal');
       assert.strictEqual(capturedConfig.cwd, path.dirname(csprojUri.fsPath));
 
-      const expectedDllPath = path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll');
-      assert.deepStrictEqual(capturedConfig.args, [expectedDllPath]);
+      assert.deepStrictEqual(capturedConfig.args, []);
     } finally {
       restoreShowQuickPick?.();
       restoreCreateQuickPick?.();
@@ -313,12 +313,12 @@ suite('dotnet-start extension', () => {
 
       assert.strictEqual(capturedConfig.type, 'coreclr');
       assert.strictEqual(capturedConfig.request, 'launch');
-      assert.strictEqual(capturedConfig.program, 'dotnet');
+      const expectedDllPath = path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll');
+      assert.strictEqual(capturedConfig.program, expectedDllPath);
       assert.strictEqual(capturedConfig.console, 'integratedTerminal');
       assert.strictEqual(capturedConfig.cwd, path.dirname(csprojUri.fsPath));
 
-      const expectedDllPath = path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll');
-      assert.deepStrictEqual(capturedConfig.args, [expectedDllPath]);
+      assert.deepStrictEqual(capturedConfig.args, []);
       assert.deepStrictEqual(capturedConfig.env, {}, 'Expected empty env when no launchSettings.json exists.');
     } finally {
       restoreShowQuickPick?.();
@@ -417,7 +417,8 @@ suite('dotnet-start extension', () => {
       assert.ok(sawOneOffProfileTitle, 'Expected the one-off profile QuickPick title to be used.');
       assert.ok(capturedConfig, 'Expected a debug configuration passed to startDebugging.');
       const expectedDllPath = path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll');
-      assert.deepStrictEqual(capturedConfig.args, [expectedDllPath]);
+      assert.strictEqual(capturedConfig.program, expectedDllPath);
+      assert.deepStrictEqual(capturedConfig.args, []);
     } finally {
       restoreShowQuickPick?.();
       restoreCreateQuickPick?.();
@@ -843,7 +844,7 @@ suite('dotnet-start extension', () => {
     let phase: 'initial' | 'afterProjectChange' = 'initial';
     let sawProfilePickerAfterProjectChange = false;
 
-    let capturedArgs: string[] | undefined;
+    let capturedProgram: string | undefined;
 
     try {
       restoreCreateQuickPick = testUtils.patchProp(
@@ -926,7 +927,7 @@ suite('dotnet-start extension', () => {
         vscode.debug,
         'startDebugging',
         (async (_folder: vscode.WorkspaceFolder, config: vscode.DebugConfiguration) => {
-          capturedArgs = config.args as string[];
+          capturedProgram = config.program as string;
           return true;
         }) as unknown as typeof vscode.debug.startDebugging,
       );
@@ -936,10 +937,7 @@ suite('dotnet-start extension', () => {
       // First run: select App + Dev (saved).
       phase = 'initial';
       await vscode.commands.executeCommand('dotnetStart.start');
-      assert.deepStrictEqual(
-        capturedArgs,
-        [path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll')],
-      );
+      assert.strictEqual(capturedProgram, path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll'));
 
       // Change project selection to App2; this should clear the saved profile.
       phase = 'afterProjectChange';
@@ -950,10 +948,7 @@ suite('dotnet-start extension', () => {
       await vscode.commands.executeCommand('dotnetStart.start');
 
       assert.ok(sawProfilePickerAfterProjectChange, 'Expected the launch profile picker to appear after changing the project.');
-      assert.deepStrictEqual(
-        capturedArgs,
-        [path.join(path.dirname(secondCsprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App2.dll')],
-      );
+      assert.strictEqual(capturedProgram, path.join(path.dirname(secondCsprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App2.dll'));
     } finally {
       restoreShowQuickPick?.();
       restoreCreateQuickPick?.();
@@ -985,7 +980,7 @@ suite('dotnet-start extension', () => {
     );
 
     let showQuickPickCalls = 0;
-    let capturedArgs: string[] | undefined;
+    let capturedProgram: string | undefined;
 
     try {
       restoreCreateQuickPick = testUtils.patchProp(
@@ -1057,7 +1052,7 @@ suite('dotnet-start extension', () => {
         vscode.debug,
         'startDebugging',
         (async (_folder: vscode.WorkspaceFolder, config: vscode.DebugConfiguration) => {
-          capturedArgs = config.args as string[];
+          capturedProgram = config.program as string;
           return true;
         }) as unknown as typeof vscode.debug.startDebugging,
       );
@@ -1067,13 +1062,13 @@ suite('dotnet-start extension', () => {
       // First run: should prompt only for csproj, auto-select the sole profile.
       await vscode.commands.executeCommand('dotnetStart.start');
       assert.strictEqual(showQuickPickCalls, 1, 'Expected only the csproj QuickPick prompt on first run.');
-      assert.deepStrictEqual(capturedArgs, [path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll')]);
+      assert.strictEqual(capturedProgram, path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll'));
 
       // Second run: should prompt for nothing (state persisted).
       showQuickPickCalls = 0;
       await vscode.commands.executeCommand('dotnetStart.start');
       assert.strictEqual(showQuickPickCalls, 0, 'Expected no prompts on subsequent run when state is saved.');
-      assert.deepStrictEqual(capturedArgs, [path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll')]);
+      assert.strictEqual(capturedProgram, path.join(path.dirname(csprojUri.fsPath), 'bin', 'Debug', 'net8.0', 'App.dll'));
     } finally {
       restoreShowQuickPick?.();
       restoreCreateQuickPick?.();
